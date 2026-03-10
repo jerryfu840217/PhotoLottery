@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import confetti from "canvas-confetti";
-import { UploadCloud, Trash2, Gift, X, Image as ImageIcon, Edit2, Check, Plus, Users, Lock, Unlock, List } from "lucide-react";
+import { UploadCloud, Trash2, Gift, X, Image as ImageIcon, Edit2, Check, Plus, Users, Lock, Unlock, List, Download, LayoutGrid } from "lucide-react";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 
@@ -69,6 +69,7 @@ export default function App() {
   const [editName, setEditName] = useState("");
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [showParticipantsModal, setShowParticipantsModal] = useState(false);
+  const [showAdminGallery, setShowAdminGallery] = useState(false);
   const [adminPassword, setAdminPassword] = useState("");
   const [confirmState, setConfirmState] = useState<{ isOpen: boolean; message: string; action: () => void }>({ isOpen: false, message: "", action: () => {} });
   const [alertState, setAlertState] = useState<{ isOpen: boolean; message: string }>({ isOpen: false, message: "" });
@@ -92,7 +93,7 @@ export default function App() {
       'x-uploader-id': uploaderId
     };
     if (isAdmin) {
-      headers['x-admin-password'] = 'admin123';
+      headers['x-admin-password'] = '0000';
     }
     return headers;
   };
@@ -302,6 +303,40 @@ export default function App() {
     }, 250);
   };
 
+  const downloadPhoto = async (photo: Photo) => {
+    try {
+      const response = await fetch(`/uploads/${photo.filename}`);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${photo.participantName || 'photo'}_${photo.filename}`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error("Failed to download photo", error);
+      showAlert("Failed to download photo");
+    }
+  };
+
+  const downloadAllPhotos = async () => {
+    if (photos.length === 0) {
+      showAlert("No photos to download");
+      return;
+    }
+    
+    showAlert("Starting download... This might take a moment depending on the number of photos.");
+    
+    // Simple sequential download to avoid overwhelming the browser
+    for (const photo of photos) {
+      await downloadPhoto(photo);
+      // Small delay between downloads
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+  };
+
   const clearPhotos = () => {
     confirmAction("Are you sure you want to delete all photos?", async () => {
       try {
@@ -363,7 +398,7 @@ export default function App() {
 
   const handleAdminLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (adminPassword === "admin123") {
+    if (adminPassword === "0000") {
       setIsAdmin(true);
       localStorage.setItem('isAdmin', 'true');
       setShowAdminModal(false);
@@ -397,14 +432,23 @@ export default function App() {
               Participants
             </button>
             {isAdmin && (
-              <button
-                onClick={clearPhotos}
-                disabled={photos.length === 0 || isDrawing || isUploading}
-                className="px-3 py-1.5 text-sm font-medium text-zinc-600 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors disabled:opacity-50 flex items-center gap-1.5"
-              >
-                <Trash2 className="w-4 h-4" />
-                Clear All
-              </button>
+              <>
+                <button
+                  onClick={() => setShowAdminGallery(true)}
+                  className="px-3 py-1.5 text-sm font-medium text-zinc-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors flex items-center gap-1.5"
+                >
+                  <LayoutGrid className="w-4 h-4" />
+                  Admin Gallery
+                </button>
+                <button
+                  onClick={clearPhotos}
+                  disabled={photos.length === 0 || isDrawing || isUploading}
+                  className="px-3 py-1.5 text-sm font-medium text-zinc-600 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Clear All
+                </button>
+              </>
             )}
             <button
               onClick={drawWinner}
@@ -713,6 +757,79 @@ export default function App() {
                   <p className="text-center text-zinc-500 py-8">No participants yet.</p>
                 )}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Admin Gallery Modal */}
+      {showAdminGallery && isAdmin && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-zinc-900/90 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-6xl max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="p-6 border-b border-zinc-200 flex justify-between items-center bg-zinc-50">
+              <div>
+                <h3 className="text-xl font-semibold flex items-center gap-2">
+                  <LayoutGrid className="w-6 h-6 text-indigo-600" />
+                  Admin Photo Gallery
+                </h3>
+                <p className="text-sm text-zinc-500 mt-1">Total Photos: {photos.length}</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={downloadAllPhotos}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
+                >
+                  <Download className="w-4 h-4" />
+                  Download All
+                </button>
+                <button 
+                  onClick={() => setShowAdminGallery(false)}
+                  className="p-2 text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 rounded-full transition-colors"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+            </div>
+            <div className="p-6 overflow-y-auto flex-1 bg-zinc-50/50">
+              {photos.length === 0 ? (
+                <div className="text-center py-20">
+                  <ImageIcon className="w-12 h-12 text-zinc-300 mx-auto mb-4" />
+                  <p className="text-zinc-500 text-lg">No photos uploaded yet.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                  {photos.map((photo) => (
+                    <div key={photo.id} className="group relative aspect-square rounded-xl overflow-hidden bg-white border border-zinc-200 shadow-sm">
+                      <img
+                        src={`/uploads/${photo.filename}`}
+                        alt={photo.originalName}
+                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                        loading="lazy"
+                      />
+                      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-3 pt-12 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <p className="text-white text-sm font-medium truncate mb-2">
+                          {photo.participantName || photo.originalName}
+                        </p>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => downloadPhoto(photo)}
+                            className="flex-1 py-1.5 bg-white/20 hover:bg-white/30 text-white rounded backdrop-blur-sm transition-colors flex items-center justify-center gap-1 text-xs"
+                          >
+                            <Download className="w-3 h-3" />
+                            Save
+                          </button>
+                          <button
+                            onClick={() => deletePhoto(photo.id)}
+                            className="p-1.5 bg-red-500/80 hover:bg-red-600 text-white rounded backdrop-blur-sm transition-colors"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>

@@ -93,7 +93,7 @@ app.get("/api/target-photos", (req, res) => {
 });
 
 app.post("/api/target-photos", upload.single("photo"), (req, res) => {
-  const isAdmin = req.headers['x-admin-password'] === 'admin123';
+  const isAdmin = req.headers['x-admin-password'] === '0000';
   if (!isAdmin) {
     return res.status(403).json({ error: "Unauthorized" });
   }
@@ -115,7 +115,7 @@ app.post("/api/target-photos", upload.single("photo"), (req, res) => {
 });
 
 app.delete("/api/target-photos/:id", (req, res) => {
-  const isAdmin = req.headers['x-admin-password'] === 'admin123';
+  const isAdmin = req.headers['x-admin-password'] === '0000';
   if (!isAdmin) {
     return res.status(403).json({ error: "Unauthorized" });
   }
@@ -204,7 +204,7 @@ app.post("/api/draw", (req, res) => {
 });
 
 app.delete("/api/photos", (req, res) => {
-  const isAdmin = req.headers['x-admin-password'] === 'admin123';
+  const isAdmin = req.headers['x-admin-password'] === '0000';
   if (!isAdmin) {
     return res.status(403).json({ error: "Unauthorized" });
   }
@@ -238,7 +238,7 @@ app.delete("/api/photos/:id", (req, res) => {
   try {
     const id = req.params.id;
     const uploaderId = req.headers['x-uploader-id'];
-    const isAdmin = req.headers['x-admin-password'] === 'admin123';
+    const isAdmin = req.headers['x-admin-password'] === '0000';
     
     const photo: any = db.prepare("SELECT filename, uploaderId FROM photos WHERE id = ?").get(id);
     
@@ -275,7 +275,7 @@ app.put("/api/photos/:id", (req, res) => {
     const id = req.params.id;
     const { participantName } = req.body;
     const uploaderId = req.headers['x-uploader-id'];
-    const isAdmin = req.headers['x-admin-password'] === 'admin123';
+    const isAdmin = req.headers['x-admin-password'] === '0000';
     
     const photo: any = db.prepare("SELECT uploaderId FROM photos WHERE id = ?").get(id);
     if (!photo) {
