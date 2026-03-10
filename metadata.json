@@ -1,0 +1,5 @@
+{
+  "name": "Photo Lottery App",
+  "description": "A web application for uploading photos and randomly drawing a winner with a visual carousel.",
+  "requestFramePermissions": []
+}

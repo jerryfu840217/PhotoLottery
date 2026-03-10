@@ -1,0 +1,866 @@
+import React, { useState, useEffect, useRef } from "react";
+import axios from "axios";
+import confetti from "canvas-confetti";
+import { UploadCloud, Trash2, Gift, X, Image as ImageIcon, Edit2, Check, Plus, Users, Lock, Unlock, List } from "lucide-react";
+import { clsx, type ClassValue } from "clsx";
+import { twMerge } from "tailwind-merge";
+
+const compressImage = (file: File, maxWidth = 1080): Promise<File> => {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target?.result as string;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, width, height);
+
+        canvas.toBlob((blob) => {
+          if (blob) {
+            resolve(new File([blob], file.name.replace(/\.[^/.]+$/, "") + ".jpg", { type: 'image/jpeg' }));
+          } else {
+            resolve(file);
+          }
+        }, 'image/jpeg', 0.8);
+      };
+      img.onerror = () => resolve(file);
+    };
+    reader.onerror = () => resolve(file);
+  });
+};
+
+function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
+
+type Photo = {
+  id: number;
+  filename: string;
+  originalName: string;
+  participantName?: string;
+  uploaderId?: string;
+  uploadTime: string;
+};
+
+export default function App() {
+  const [photos, setPhotos] = useState<Photo[]>([]);
+  const [targetPhotos, setTargetPhotos] = useState<Photo[]>([]);
+  const [isUploadingTarget, setIsUploadingTarget] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number>(0);
+  const [isUploading, setIsUploading] = useState(false);
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [winner, setWinner] = useState<Photo | null>(null);
+  const [showWinnerModal, setShowWinnerModal] = useState(false);
+  const [carouselIndex, setCarouselIndex] = useState(0);
+  const [participantName, setParticipantName] = useState("");
+  const [editingPhotoId, setEditingPhotoId] = useState<number | null>(null);
+  const [editName, setEditName] = useState("");
+  const [showAdminModal, setShowAdminModal] = useState(false);
+  const [showParticipantsModal, setShowParticipantsModal] = useState(false);
+  const [adminPassword, setAdminPassword] = useState("");
+  const [confirmState, setConfirmState] = useState<{ isOpen: boolean; message: string; action: () => void }>({ isOpen: false, message: "", action: () => {} });
+  const [alertState, setAlertState] = useState<{ isOpen: boolean; message: string }>({ isOpen: false, message: "" });
+  const [visibleCount, setVisibleCount] = useState(20);
+
+  const showAlert = (message: string) => setAlertState({ isOpen: true, message });
+  const confirmAction = (message: string, action: () => void) => setConfirmState({ isOpen: true, message, action });
+
+  const [uploaderId] = useState(() => {
+    let id = localStorage.getItem('uploaderId');
+    if (!id) {
+      id = crypto.randomUUID();
+      localStorage.setItem('uploaderId', id);
+    }
+    return id;
+  });
+  const [isAdmin, setIsAdmin] = useState(() => localStorage.getItem('isAdmin') === 'true');
+
+  const getHeaders = () => {
+    const headers: Record<string, string> = {
+      'x-uploader-id': uploaderId
+    };
+    if (isAdmin) {
+      headers['x-admin-password'] = 'admin123';
+    }
+    return headers;
+  };
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const targetFileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    fetchPhotos();
+    fetchTargetPhotos();
+  }, []);
+
+  const fetchTargetPhotos = async () => {
+    try {
+      const res = await axios.get("/api/target-photos");
+      setTargetPhotos(Array.isArray(res.data) ? res.data : []);
+    } catch (error) {
+      console.error("Failed to fetch target photos", error);
+      setTargetPhotos([]);
+    }
+  };
+
+  const handleTargetUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      showAlert("File size exceeds 5MB limit.");
+      return;
+    }
+
+    if (!["image/jpeg", "image/png"].includes(file.type)) {
+      showAlert("Invalid file type. Only JPG and PNG are allowed.");
+      return;
+    }
+
+    const formData = new FormData();
+    
+    setIsUploadingTarget(true);
+    try {
+      const compressedFile = await compressImage(file);
+      formData.append("photo", compressedFile);
+
+      await axios.post("/api/target-photos", formData, {
+        headers: { 
+          "Content-Type": "multipart/form-data",
+          ...getHeaders()
+        },
+      });
+      await fetchTargetPhotos();
+    } catch (error: any) {
+      console.error("Target upload failed", error);
+      showAlert(error.response?.data?.error || "Upload failed");
+    } finally {
+      setIsUploadingTarget(false);
+      if (targetFileInputRef.current) {
+        targetFileInputRef.current.value = "";
+      }
+    }
+  };
+
+  const deleteTargetPhoto = (id: number) => {
+    confirmAction("Are you sure you want to delete this target photo?", async () => {
+      try {
+        await axios.delete(`/api/target-photos/${id}`, { headers: getHeaders() });
+        setTargetPhotos(prev => prev.filter(p => p.id !== id));
+      } catch (error: any) {
+        console.error("Failed to delete target photo", error);
+        showAlert(error.response?.data?.error || "Failed to delete target photo");
+      }
+    });
+  };
+
+  const fetchPhotos = async () => {
+    try {
+      const res = await axios.get("/api/photos");
+      setPhotos(Array.isArray(res.data) ? res.data : []);
+    } catch (error) {
+      console.error("Failed to fetch photos", error);
+      setPhotos([]);
+    }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      showAlert("File size exceeds 5MB limit.");
+      return;
+    }
+
+    if (!["image/jpeg", "image/png"].includes(file.type)) {
+      showAlert("Invalid file type. Only JPG and PNG are allowed.");
+      return;
+    }
+
+    if (!participantName.trim()) {
+      showAlert("Please enter at least one participant name before uploading.");
+      return;
+    }
+
+    const formData = new FormData();
+
+    setIsUploading(true);
+    setUploadProgress(0);
+
+    try {
+      const compressedFile = await compressImage(file);
+      formData.append("photo", compressedFile);
+      formData.append("participantName", participantName.trim());
+
+      await axios.post("/api/photos", formData, {
+        headers: { 
+          "Content-Type": "multipart/form-data",
+          ...getHeaders()
+        },
+        onUploadProgress: (progressEvent) => {
+          if (progressEvent.total) {
+            const percentCompleted = Math.round(
+              (progressEvent.loaded * 100) / progressEvent.total
+            );
+            setUploadProgress(percentCompleted);
+          }
+        },
+      });
+      await fetchPhotos();
+    } catch (error: any) {
+      console.error("Upload failed", error);
+      showAlert(error.response?.data?.error || "Upload failed");
+    } finally {
+      setIsUploading(false);
+      setUploadProgress(0);
+      setParticipantName("");
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
+  };
+
+  const drawWinner = async () => {
+    if (photos.length === 0) {
+      showAlert("No photos available for drawing.");
+      return;
+    }
+
+    setIsDrawing(true);
+    setWinner(null);
+    setShowWinnerModal(true);
+
+    // Start carousel effect
+    let currentIndex = 0;
+    const interval = setInterval(() => {
+      currentIndex = (currentIndex + 1) % photos.length;
+      setCarouselIndex(currentIndex);
+    }, 100); // Fast cycle
+
+    try {
+      const res = await axios.post("/api/draw");
+      const drawnWinner = res.data;
+
+      // Simulate some suspense time (e.g., 3 seconds)
+      setTimeout(() => {
+        clearInterval(interval);
+        setWinner(drawnWinner);
+        
+        // Find winner index to stop carousel on it
+        const winnerIdx = photos.findIndex(p => p.id === drawnWinner.id);
+        if (winnerIdx !== -1) setCarouselIndex(winnerIdx);
+
+        triggerConfetti();
+        setIsDrawing(false);
+      }, 3000);
+
+    } catch (error) {
+      console.error("Failed to draw winner", error);
+      clearInterval(interval);
+      setIsDrawing(false);
+      setShowWinnerModal(false);
+      alert("Failed to draw winner.");
+    }
+  };
+
+  const triggerConfetti = () => {
+    const duration = 3 * 1000;
+    const animationEnd = Date.now() + duration;
+    const defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 100 };
+
+    const randomInRange = (min: number, max: number) => Math.random() * (max - min) + min;
+
+    const interval: any = setInterval(function() {
+      const timeLeft = animationEnd - Date.now();
+
+      if (timeLeft <= 0) {
+        return clearInterval(interval);
+      }
+
+      const particleCount = 50 * (timeLeft / duration);
+      confetti({
+        ...defaults, particleCount,
+        origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 }
+      });
+      confetti({
+        ...defaults, particleCount,
+        origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 }
+      });
+    }, 250);
+  };
+
+  const clearPhotos = () => {
+    confirmAction("Are you sure you want to delete all photos?", async () => {
+      try {
+        await axios.delete("/api/photos", { headers: getHeaders() });
+        setPhotos([]);
+      } catch (error: any) {
+        console.error("Failed to clear photos", error);
+        showAlert(error.response?.data?.error || "Failed to clear photos");
+      }
+    });
+  };
+
+  const deletePhoto = (id: number) => {
+    confirmAction("Are you sure you want to delete this photo?", async () => {
+      try {
+        await axios.delete(`/api/photos/${id}`, { headers: getHeaders() });
+        setPhotos(prev => prev.filter(p => p.id !== id));
+      } catch (error: any) {
+        console.error("Failed to delete photo", error);
+        showAlert(error.response?.data?.error || "Failed to delete photo");
+      }
+    });
+  };
+
+  const startEditing = (photo: Photo) => {
+    setEditingPhotoId(photo.id);
+    setEditName(photo.participantName || photo.originalName);
+  };
+
+  const saveEdit = async (id: number) => {
+    if (!editName.trim()) {
+      showAlert("Name cannot be empty");
+      return;
+    }
+    
+    try {
+      await axios.put(`/api/photos/${id}`, { participantName: editName.trim() }, { headers: getHeaders() });
+      setPhotos(photos.map(p => p.id === id ? { ...p, participantName: editName.trim() } : p));
+      setEditingPhotoId(null);
+    } catch (error: any) {
+      console.error("Failed to update photo", error);
+      showAlert(error.response?.data?.error || "Failed to update photo");
+    }
+  };
+
+  const cancelEdit = () => {
+    setEditingPhotoId(null);
+    setEditName("");
+  };
+
+  const toggleAdmin = () => {
+    if (isAdmin) {
+      setIsAdmin(false);
+      localStorage.setItem('isAdmin', 'false');
+    } else {
+      setShowAdminModal(true);
+    }
+  };
+
+  const handleAdminLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (adminPassword === "admin123") {
+      setIsAdmin(true);
+      localStorage.setItem('isAdmin', 'true');
+      setShowAdminModal(false);
+      setAdminPassword("");
+    } else {
+      showAlert("Incorrect password");
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-zinc-50 text-zinc-900 font-sans selection:bg-indigo-100 selection:text-indigo-900">
+      <header className="bg-white border-b border-zinc-200 sticky top-0 z-10">
+        <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Gift className="w-6 h-6 text-indigo-600" />
+            <h1 className="text-xl font-semibold tracking-tight">Photo Lottery</h1>
+            <button 
+              onClick={toggleAdmin}
+              className="ml-2 p-2.5 text-zinc-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"
+              title={isAdmin ? "Disable Admin Mode" : "Enable Admin Mode"}
+            >
+              {isAdmin ? <Unlock className="w-5 h-5" /> : <Lock className="w-5 h-5" />}
+            </button>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowParticipantsModal(true)}
+              className="px-3 py-1.5 text-sm font-medium text-zinc-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors flex items-center gap-1.5"
+            >
+              <List className="w-4 h-4" />
+              Participants
+            </button>
+            {isAdmin && (
+              <button
+                onClick={clearPhotos}
+                disabled={photos.length === 0 || isDrawing || isUploading}
+                className="px-3 py-1.5 text-sm font-medium text-zinc-600 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors disabled:opacity-50 flex items-center gap-1.5"
+              >
+                <Trash2 className="w-4 h-4" />
+                Clear All
+              </button>
+            )}
+            <button
+              onClick={drawWinner}
+              disabled={photos.length === 0 || isDrawing || isUploading}
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              <Gift className="w-4 h-4" />
+              Draw Winner
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-5xl mx-auto px-4 py-8 space-y-8">
+        {/* Target Photos Section */}
+        <section className="bg-white rounded-2xl border border-zinc-200 p-6 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-medium flex items-center gap-2">
+              <Users className="w-5 h-5 text-indigo-500" />
+              尋找目標 (Target People)
+            </h2>
+            {isAdmin && (
+              <div>
+                <input
+                  type="file"
+                  ref={targetFileInputRef}
+                  onChange={handleTargetUpload}
+                  accept="image/jpeg, image/png"
+                  className="hidden"
+                  disabled={isUploadingTarget}
+                />
+                <button
+                  onClick={() => targetFileInputRef.current?.click()}
+                  disabled={isUploadingTarget}
+                  className="px-3 py-1.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 text-sm font-medium rounded-md transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  <Plus className="w-4 h-4" />
+                  {isUploadingTarget ? "Uploading..." : "Add Target"}
+                </button>
+              </div>
+            )}
+          </div>
+          
+          {targetPhotos.length === 0 ? (
+            <div className="text-center py-8 bg-zinc-50 rounded-xl border border-zinc-200 border-dashed">
+              <p className="text-zinc-500 text-sm">尚未設定尋找目標{isAdmin ? "，請點擊右上角新增" : ""}。</p>
+            </div>
+          ) : (
+            <div className="flex gap-4 overflow-x-auto pb-2 snap-x">
+              {targetPhotos.map((photo) => (
+                <div key={photo.id} className="group relative w-32 h-32 flex-shrink-0 rounded-xl overflow-hidden bg-zinc-100 border border-zinc-200 shadow-sm snap-start">
+                  <img
+                    src={`/uploads/${photo.filename}`}
+                    alt={photo.originalName}
+                    className="w-full h-full object-cover"
+                    loading="lazy"
+                  />
+                  {isAdmin && (
+                    <button
+                      onClick={() => deleteTargetPhoto(photo.id)}
+                      className="absolute top-1 right-1 p-1.5 bg-white/90 hover:bg-red-50 text-red-600 rounded-md shadow-sm backdrop-blur-sm opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all"
+                      title="Delete Target"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* Upload Section */}
+        <section className="bg-white rounded-2xl border border-zinc-200 p-8 shadow-sm">
+          <div className="max-w-xl mx-auto text-center">
+            <h2 className="text-lg font-medium mb-2">找到他們 → 跟他們合照 → 輸入合照中所有人的名字 → 上傳照片</h2>
+            <p className="text-sm text-zinc-500 mb-6">
+              JPG or PNG up to 5MB. Participants will be drawn from these photos.
+            </p>
+
+            <div className="mb-6 text-left">
+              <label htmlFor="participantName" className="block text-sm font-medium text-zinc-700 mb-1">
+                Participant Names <span className="text-red-500">*</span>
+              </label>
+              <textarea
+                id="participantName"
+                value={participantName}
+                onChange={(e) => setParticipantName(e.target.value)}
+                placeholder="Enter names (separated by commas or new lines)"
+                rows={3}
+                className="w-full px-4 py-2 border border-zinc-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all disabled:bg-zinc-100 disabled:text-zinc-500 resize-none"
+                disabled={isUploading || isDrawing}
+              />
+              <p className="text-xs text-zinc-500 mt-1">Each name will be counted as a separate entry.</p>
+            </div>
+            
+            <div 
+              className={cn(
+                "border-2 border-dashed rounded-xl p-8 transition-colors relative",
+                isUploading ? "border-indigo-300 bg-indigo-50/50" : "border-zinc-300 hover:border-indigo-400 hover:bg-zinc-50",
+                !participantName.trim() && "opacity-50 cursor-not-allowed hover:border-zinc-300 hover:bg-transparent"
+              )}
+            >
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileUpload}
+                accept="image/jpeg, image/png"
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
+                disabled={isUploading || isDrawing || !participantName.trim()}
+              />
+              <div className="flex flex-col items-center gap-3 pointer-events-none">
+                <div className="p-3 bg-white rounded-full shadow-sm border border-zinc-100">
+                  <UploadCloud className={cn("w-6 h-6", participantName.trim() ? "text-indigo-500" : "text-zinc-400")} />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-zinc-700">
+                    {participantName.trim() ? "Click or drag photo to upload" : "Enter a name first to upload"}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {isUploading && (
+              <div className="mt-6 space-y-2">
+                <div className="flex justify-between text-xs font-medium text-zinc-500">
+                  <span>Uploading...</span>
+                  <span>{uploadProgress}%</span>
+                </div>
+                <div className="h-2 bg-zinc-100 rounded-full overflow-hidden">
+                  <div 
+                    className="h-full bg-indigo-600 transition-all duration-300 ease-out rounded-full"
+                    style={{ width: `${uploadProgress}%` }}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* Photo Grid */}
+        <section>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-medium flex items-center gap-2">
+              <ImageIcon className="w-5 h-5 text-zinc-400" />
+              Participants ({photos.length})
+            </h2>
+          </div>
+          
+          {photos.length === 0 ? (
+            <div className="text-center py-12 bg-white rounded-2xl border border-zinc-200 border-dashed">
+              <p className="text-zinc-500 text-sm">No photos uploaded yet.</p>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                {photos.slice(0, visibleCount).map((photo) => (
+                  <div key={photo.id} className="group relative aspect-square rounded-xl overflow-hidden bg-zinc-100 border border-zinc-200 shadow-sm">
+                    <img
+                      src={`/uploads/${photo.filename}`}
+                      alt={photo.originalName}
+                      className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                      loading="lazy"
+                    />
+                  
+                  {/* Actions Overlay */}
+                  {(isAdmin || photo.uploaderId === uploaderId) && (
+                    <div className="absolute top-2 right-2 flex gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity z-10">
+                      <button
+                        onClick={() => startEditing(photo)}
+                        className="p-1.5 bg-white/90 hover:bg-white text-zinc-700 rounded-md shadow-sm backdrop-blur-sm transition-colors"
+                        title="Edit Name"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => deletePhoto(photo.id)}
+                        className="p-1.5 bg-white/90 hover:bg-red-50 text-red-600 rounded-md shadow-sm backdrop-blur-sm transition-colors"
+                        title="Delete Photo"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
+
+                  <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent p-3 pt-8 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                    <p className="text-white text-xs truncate font-medium">
+                      {photo.participantName || photo.originalName}
+                    </p>
+                  </div>
+
+                  {/* Edit Overlay */}
+                  {editingPhotoId === photo.id && (
+                    <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-20">
+                      <div className="bg-white rounded-lg p-3 w-full shadow-xl">
+                        <label className="block text-xs font-medium text-zinc-700 mb-1">Edit Name</label>
+                        <input
+                          type="text"
+                          value={editName}
+                          onChange={(e) => setEditName(e.target.value)}
+                          className="w-full px-2 py-1.5 text-sm border border-zinc-300 rounded focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none mb-2"
+                          autoFocus
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') saveEdit(photo.id);
+                            if (e.key === 'Escape') cancelEdit();
+                          }}
+                        />
+                        <div className="flex justify-end gap-2">
+                          <button
+                            onClick={cancelEdit}
+                            className="p-1 text-zinc-500 hover:bg-zinc-100 rounded"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => saveEdit(photo.id)}
+                            className="p-1 text-emerald-600 hover:bg-emerald-50 rounded"
+                          >
+                            <Check className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+            
+            {visibleCount < photos.length && (
+              <div className="flex justify-center pt-4">
+                <button
+                  onClick={() => setVisibleCount(v => v + 20)}
+                  className="px-6 py-2 bg-white border border-zinc-200 hover:bg-zinc-50 text-zinc-700 font-medium rounded-full shadow-sm transition-colors"
+                >
+                  Load More ({photos.length - visibleCount} remaining)
+                </button>
+              </div>
+            )}
+          </div>
+          )}
+        </section>
+      </main>
+
+      {/* Participants Modal */}
+      {showParticipantsModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-zinc-900/80 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="p-6 border-b border-zinc-200 flex justify-between items-center bg-zinc-50">
+              <h3 className="text-lg font-semibold flex items-center gap-2">
+                <Users className="w-5 h-5 text-indigo-600" />
+                Participant List
+              </h3>
+              <button 
+                onClick={() => setShowParticipantsModal(false)}
+                className="p-1 text-zinc-400 hover:text-zinc-600 rounded-full transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto flex-1">
+              <div className="space-y-3">
+                {(() => {
+                  const nameCounts = photos.reduce((acc, photo) => {
+                    const name = photo.participantName || 'Unknown';
+                    acc[name] = (acc[name] || 0) + 1;
+                    return acc;
+                  }, {} as Record<string, number>);
+
+                  const sortedPhotos = [...photos].sort((a, b) => {
+                    const nameA = a.participantName || 'Unknown';
+                    const nameB = b.participantName || 'Unknown';
+                    return nameA.localeCompare(nameB);
+                  });
+
+                  return sortedPhotos.map(photo => {
+                    const name = photo.participantName || 'Unknown';
+                    const isDuplicate = nameCounts[name] > 1;
+                    const canDelete = isAdmin || photo.uploaderId === uploaderId;
+
+                    return (
+                      <div key={photo.id} className={cn("flex items-center justify-between p-3 rounded-xl border", isDuplicate ? "bg-red-50 border-red-200" : "bg-white border-zinc-200")}>
+                        <div className="flex items-center gap-4">
+                          <img src={`/uploads/${photo.filename}`} alt={name} className="w-12 h-12 rounded-lg object-cover border border-zinc-200" />
+                          <div>
+                            <p className={cn("font-medium", isDuplicate ? "text-red-700" : "text-zinc-900")}>
+                              {name}
+                              {isDuplicate && <span className="ml-2 text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full">Duplicate</span>}
+                            </p>
+                            <p className="text-xs text-zinc-500">{new Date(photo.uploadTime).toLocaleString()}</p>
+                          </div>
+                        </div>
+                        {canDelete && (
+                          <button
+                            onClick={() => deletePhoto(photo.id)}
+                            className="p-2 text-zinc-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                            title="Delete Photo"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  });
+                })()}
+                {photos.length === 0 && (
+                  <p className="text-center text-zinc-500 py-8">No participants yet.</p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Admin Login Modal */}
+      {showAdminModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-zinc-900/80 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-semibold">Admin Login</h3>
+                <button 
+                  onClick={() => {
+                    setShowAdminModal(false);
+                    setAdminPassword("");
+                  }}
+                  className="p-1 text-zinc-400 hover:text-zinc-600 rounded-full transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <form onSubmit={handleAdminLogin}>
+                <input
+                  type="password"
+                  value={adminPassword}
+                  onChange={(e) => setAdminPassword(e.target.value)}
+                  placeholder="Enter admin password"
+                  className="w-full px-4 py-2 border border-zinc-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none mb-4"
+                  autoFocus
+                />
+                <button
+                  type="submit"
+                  className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg transition-colors"
+                >
+                  Login
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm Modal */}
+      {confirmState.isOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-zinc-900/80 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="p-6">
+              <h3 className="text-lg font-semibold mb-4">Confirm Action</h3>
+              <p className="text-zinc-600 mb-6">{confirmState.message}</p>
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={() => setConfirmState({ ...confirmState, isOpen: false })}
+                  className="px-4 py-2 text-zinc-600 hover:bg-zinc-100 font-medium rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    confirmState.action();
+                    setConfirmState({ ...confirmState, isOpen: false });
+                  }}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg transition-colors"
+                >
+                  Confirm
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Alert Modal */}
+      {alertState.isOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-zinc-900/80 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="p-6">
+              <h3 className="text-lg font-semibold mb-4">Notice</h3>
+              <p className="text-zinc-600 mb-6">{alertState.message}</p>
+              <div className="flex justify-end">
+                <button
+                  onClick={() => setAlertState({ ...alertState, isOpen: false })}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg transition-colors w-full"
+                >
+                  OK
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Winner Modal / Carousel */}
+      {showWinnerModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-900/80 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden relative animate-in fade-in zoom-in duration-300">
+            {!isDrawing && (
+              <button 
+                onClick={() => setShowWinnerModal(false)}
+                className="absolute top-4 right-4 z-10 p-2 bg-black/10 hover:bg-black/20 text-white rounded-full backdrop-blur-md transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            )}
+            
+            <div className="p-8 text-center bg-zinc-900 text-white">
+              <h3 className="text-2xl font-bold tracking-tight mb-2">
+                {isDrawing ? "Drawing Winner..." : "We have a winner!"}
+              </h3>
+              <p className="text-zinc-400 text-sm">
+                {isDrawing ? "Good luck to everyone" : "Congratulations!"}
+              </p>
+            </div>
+
+            <div className="p-8 flex flex-col items-center bg-white">
+              <div className="relative w-64 h-64 rounded-2xl overflow-hidden shadow-inner border-4 border-zinc-100 mb-6">
+                {photos.length > 0 && (
+                  <img
+                    src={`/uploads/${photos[carouselIndex].filename}`}
+                    alt="Participant"
+                    className={cn(
+                      "w-full h-full object-cover transition-all",
+                      isDrawing ? "scale-110 blur-[2px] opacity-80" : "scale-100 blur-0 opacity-100"
+                    )}
+                  />
+                )}
+                
+                {/* Overlay highlight when winner is selected */}
+                {!isDrawing && winner && (
+                  <div className="absolute inset-0 ring-4 ring-indigo-500 ring-inset rounded-2xl animate-pulse" />
+                )}
+              </div>
+
+              {!isDrawing && winner && (
+                <div className="text-center animate-in slide-in-from-bottom-4 fade-in duration-500">
+                  <p className="text-lg font-semibold text-zinc-900 truncate max-w-[250px]">
+                    {winner.participantName || winner.originalName}
+                  </p>
+                  <p className="text-sm text-zinc-500 mt-1">
+                    Ticket #{winner.id.toString().padStart(4, '0')}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
