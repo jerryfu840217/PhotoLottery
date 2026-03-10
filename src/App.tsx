@@ -74,6 +74,8 @@ export default function App() {
   const [confirmState, setConfirmState] = useState<{ isOpen: boolean; message: string; action: () => void }>({ isOpen: false, message: "", action: () => {} });
   const [alertState, setAlertState] = useState<{ isOpen: boolean; message: string }>({ isOpen: false, message: "" });
   const [visibleCount, setVisibleCount] = useState(20);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [pendingPreviewUrl, setPendingPreviewUrl] = useState<string | null>(null);
 
   const showAlert = (message: string) => setAlertState({ isOpen: true, message });
   const confirmAction = (message: string, action: () => void) => setConfirmState({ isOpen: true, message, action });
@@ -196,13 +198,31 @@ export default function App() {
       return;
     }
 
+    setPendingFile(file);
+    setPendingPreviewUrl(URL.createObjectURL(file));
+  };
+
+  const cancelUpload = () => {
+    setPendingFile(null);
+    if (pendingPreviewUrl) {
+      URL.revokeObjectURL(pendingPreviewUrl);
+      setPendingPreviewUrl(null);
+    }
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  const confirmUpload = async () => {
+    if (!pendingFile || !participantName.trim()) return;
+
     const formData = new FormData();
 
     setIsUploading(true);
     setUploadProgress(0);
 
     try {
-      const compressedFile = await compressImage(file);
+      const compressedFile = await compressImage(pendingFile);
       formData.append("photo", compressedFile);
       formData.append("participantName", participantName.trim());
 
@@ -228,9 +248,7 @@ export default function App() {
       setIsUploading(false);
       setUploadProgress(0);
       setParticipantName("");
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
+      cancelUpload();
     }
   };
 
@@ -456,7 +474,7 @@ export default function App() {
               className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
               <Gift className="w-4 h-4" />
-              Draw Winner
+              抽出幸運兒!
             </button>
           </div>
         </div>
@@ -468,7 +486,7 @@ export default function App() {
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-medium flex items-center gap-2">
               <Users className="w-5 h-5 text-indigo-500" />
-              尋找目標 (Target People)
+              尋找目標
             </h2>
             {isAdmin && (
               <div>
@@ -526,65 +544,123 @@ export default function App() {
           <div className="max-w-xl mx-auto text-center">
             <h2 className="text-lg font-medium mb-2">找到他們 → 跟他們合照 → 輸入合照中所有人的名字 → 上傳照片</h2>
             <p className="text-sm text-zinc-500 mb-6">
-              JPG or PNG up to 5MB. Participants will be drawn from these photos.
+                JPG or PNG up to 5MB. 
             </p>
 
             <div className="mb-6 text-left">
               <label htmlFor="participantName" className="block text-sm font-medium text-zinc-700 mb-1">
-                Participant Names <span className="text-red-500">*</span>
+                請輸入合照中所有人名單 <span className="text-red-500">*</span>
               </label>
               <textarea
                 id="participantName"
                 value={participantName}
                 onChange={(e) => setParticipantName(e.target.value)}
-                placeholder="Enter names (separated by commas or new lines)"
+                placeholder="若合照中不只一人 請換行輸入"
                 rows={3}
                 className="w-full px-4 py-2 border border-zinc-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all disabled:bg-zinc-100 disabled:text-zinc-500 resize-none"
-                disabled={isUploading || isDrawing}
+                disabled={isUploading || isDrawing || !!pendingFile}
               />
-              <p className="text-xs text-zinc-500 mt-1">Each name will be counted as a separate entry.</p>
+              <p className="text-xs text-zinc-500 mt-1">重複輸入名稱僅會計算一次</p>
             </div>
             
-            <div 
-              className={cn(
-                "border-2 border-dashed rounded-xl p-8 transition-colors relative",
-                isUploading ? "border-indigo-300 bg-indigo-50/50" : "border-zinc-300 hover:border-indigo-400 hover:bg-zinc-50",
-                !participantName.trim() && "opacity-50 cursor-not-allowed hover:border-zinc-300 hover:bg-transparent"
-              )}
-            >
-              <input
-                type="file"
-                ref={fileInputRef}
-                onChange={handleFileUpload}
-                accept="image/jpeg, image/png"
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
-                disabled={isUploading || isDrawing || !participantName.trim()}
-              />
-              <div className="flex flex-col items-center gap-3 pointer-events-none">
-                <div className="p-3 bg-white rounded-full shadow-sm border border-zinc-100">
-                  <UploadCloud className={cn("w-6 h-6", participantName.trim() ? "text-indigo-500" : "text-zinc-400")} />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-zinc-700">
-                    {participantName.trim() ? "Click or drag photo to upload" : "Enter a name first to upload"}
-                  </p>
+            {pendingFile && pendingPreviewUrl ? (
+              <div className="mt-6 border border-zinc-200 rounded-xl p-6 bg-zinc-50 text-left">
+                <h3 className="text-md font-medium mb-4 text-zinc-800">確認照片與名單</h3>
+                <div className="flex flex-col md:flex-row gap-6 items-start">
+                  <div className="w-full md:w-1/2">
+                    <img 
+                      src={pendingPreviewUrl} 
+                      alt="Preview" 
+                      className="w-full h-auto rounded-lg shadow-sm border border-zinc-200 object-cover max-h-64"
+                    />
+                  </div>
+                  <div className="w-full md:w-1/2 flex flex-col h-full justify-between">
+                    <div>
+                      <p className="text-sm text-zinc-500 mb-1">參與者名單：</p>
+                      <div className="bg-white p-3 rounded-lg border border-zinc-200 min-h-24 whitespace-pre-wrap text-sm">
+                        {participantName}
+                      </div>
+                    </div>
+                    
+                    {isUploading ? (
+                      <div className="mt-6 space-y-2">
+                        <div className="flex justify-between text-xs font-medium text-zinc-500">
+                          <span>Uploading...</span>
+                          <span>{uploadProgress}%</span>
+                        </div>
+                        <div className="h-2 bg-zinc-100 rounded-full overflow-hidden">
+                          <div 
+                            className="h-full bg-indigo-600 transition-all duration-300 ease-out rounded-full"
+                            style={{ width: `${uploadProgress}%` }}
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex gap-3 mt-6">
+                        <button
+                          onClick={cancelUpload}
+                          disabled={isUploading}
+                          className="flex-1 px-4 py-2 border border-zinc-300 text-zinc-700 rounded-lg hover:bg-zinc-100 transition-colors text-sm font-medium disabled:opacity-50"
+                        >
+                          取消重選
+                        </button>
+                        <button
+                          onClick={confirmUpload}
+                          disabled={isUploading}
+                          className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-medium disabled:opacity-50 flex items-center justify-center gap-2"
+                        >
+                          <UploadCloud className="w-4 h-4" />
+                          確認上傳
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-
-            {isUploading && (
-              <div className="mt-6 space-y-2">
-                <div className="flex justify-between text-xs font-medium text-zinc-500">
-                  <span>Uploading...</span>
-                  <span>{uploadProgress}%</span>
-                </div>
-                <div className="h-2 bg-zinc-100 rounded-full overflow-hidden">
-                  <div 
-                    className="h-full bg-indigo-600 transition-all duration-300 ease-out rounded-full"
-                    style={{ width: `${uploadProgress}%` }}
+            ) : (
+              <>
+                <div 
+                  className={cn(
+                    "border-2 border-dashed rounded-xl p-8 transition-colors relative",
+                    isUploading ? "border-indigo-300 bg-indigo-50/50" : "border-zinc-300 hover:border-indigo-400 hover:bg-zinc-50",
+                    !participantName.trim() && "opacity-50 cursor-not-allowed hover:border-zinc-300 hover:bg-transparent"
+                  )}
+                >
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleFileUpload}
+                    accept="image/jpeg, image/png"
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
+                    disabled={isUploading || isDrawing || !participantName.trim()}
                   />
+                  <div className="flex flex-col items-center gap-3 pointer-events-none">
+                    <div className="p-3 bg-white rounded-full shadow-sm border border-zinc-100">
+                      <UploadCloud className={cn("w-6 h-6", participantName.trim() ? "text-indigo-500" : "text-zinc-400")} />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-zinc-700">
+                        {participantName.trim() ? "Click or drag photo to upload" : "請先輸入名稱再上傳照片"}
+                      </p>
+                    </div>
+                  </div>
                 </div>
-              </div>
+
+                {isUploading && (
+                  <div className="mt-6 space-y-2">
+                    <div className="flex justify-between text-xs font-medium text-zinc-500">
+                      <span>Uploading...</span>
+                      <span>{uploadProgress}%</span>
+                    </div>
+                    <div className="h-2 bg-zinc-100 rounded-full overflow-hidden">
+                      <div 
+                        className="h-full bg-indigo-600 transition-all duration-300 ease-out rounded-full"
+                        style={{ width: `${uploadProgress}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </section>
@@ -697,10 +773,15 @@ export default function App() {
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-zinc-900/80 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col overflow-hidden animate-in fade-in zoom-in duration-200">
             <div className="p-6 border-b border-zinc-200 flex justify-between items-center bg-zinc-50">
-              <h3 className="text-lg font-semibold flex items-center gap-2">
-                <Users className="w-5 h-5 text-indigo-600" />
-                Participant List
-              </h3>
+              <div className="flex items-center gap-3">
+                <h3 className="text-lg font-semibold flex items-center gap-2">
+                  <Users className="w-5 h-5 text-indigo-600" />
+                  Participant List
+                </h3>
+                <span className="px-2.5 py-0.5 bg-indigo-100 text-indigo-700 text-sm font-medium rounded-full">
+                  Total: {new Set(photos.map(p => p.participantName || 'Unknown')).size}
+                </span>
+              </div>
               <button 
                 onClick={() => setShowParticipantsModal(false)}
                 className="p-1 text-zinc-400 hover:text-zinc-600 rounded-full transition-colors"
@@ -754,7 +835,7 @@ export default function App() {
                   });
                 })()}
                 {photos.length === 0 && (
-                  <p className="text-center text-zinc-500 py-8">No participants yet.</p>
+                  <p className="text-center text-zinc-500 py-8">No Participants yet.</p>
                 )}
               </div>
             </div>
