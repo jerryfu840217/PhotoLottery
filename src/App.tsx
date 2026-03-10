@@ -193,11 +193,6 @@ export default function App() {
       return;
     }
 
-    if (!participantName.trim()) {
-      showAlert("Please enter at least one participant name before uploading.");
-      return;
-    }
-
     setPendingFile(file);
     setPendingPreviewUrl(URL.createObjectURL(file));
   };
@@ -215,6 +210,12 @@ export default function App() {
 
   const confirmUpload = async () => {
     if (!pendingFile || !participantName.trim()) return;
+
+    // 檢查是否有特殊符號或空白 (只允許中英數字和換行)
+    if (/[^\u4e00-\u9fa5a-zA-Z0-9\n\r]/.test(participantName)) {
+      showAlert("名字不能包含空白或特殊符號，若有多人請務必使用「換行」輸入。請重新輸入！");
+      return;
+    }
 
     const formData = new FormData();
 
@@ -547,30 +548,14 @@ export default function App() {
         {/* Upload Section */}
         <section className="bg-white rounded-2xl border border-zinc-200 p-8 shadow-sm">
           <div className="max-w-xl mx-auto text-center">
-            <h2 className="text-lg font-medium mb-2">找到他們 → 跟他們合照 → 輸入合照中所有人的名字 → 上傳照片</h2>
+            <h2 className="text-lg font-medium mb-2">找到他們 → 跟他們合照 → 上傳照片 → 輸入合照中所有人的名字</h2>
             <p className="text-sm text-zinc-500 mb-6">
                 JPG or PNG up to 5MB. 
             </p>
-
-            <div className="mb-6 text-left">
-              <label htmlFor="participantName" className="block text-sm font-medium text-zinc-700 mb-1">
-                請輸入合照中所有人名單 <span className="text-red-500">*</span>
-              </label>
-              <textarea
-                id="participantName"
-                value={participantName}
-                onChange={(e) => setParticipantName(e.target.value)}
-                placeholder="若合照中不只一人 請換行輸入"
-                rows={3}
-                className="w-full px-4 py-2 border border-zinc-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all disabled:bg-zinc-100 disabled:text-zinc-500 resize-none"
-                disabled={isUploading || isDrawing || !!pendingFile}
-              />
-              <p className="text-xs text-zinc-500 mt-1">重複輸入名稱僅會計算一次</p>
-            </div>
             
             {pendingFile && pendingPreviewUrl ? (
-              <div className="mt-6 border border-zinc-200 rounded-xl p-6 bg-zinc-50 text-left">
-                <h3 className="text-md font-medium mb-4 text-zinc-800">確認照片與名單</h3>
+              <div className="border border-zinc-200 rounded-xl p-6 bg-zinc-50 text-left">
+                <h3 className="text-md font-medium mb-4 text-zinc-800">確認照片與輸入名單</h3>
                 <div className="flex flex-col md:flex-row gap-6 items-start">
                   <div className="w-full md:w-1/2">
                     <img 
@@ -580,15 +565,27 @@ export default function App() {
                     />
                   </div>
                   <div className="w-full md:w-1/2 flex flex-col h-full justify-between">
-                    <div>
-                      <p className="text-sm text-zinc-500 mb-1">參與者名單：</p>
-                      <div className="bg-white p-3 rounded-lg border border-zinc-200 min-h-24 whitespace-pre-wrap text-sm">
-                        {participantName}
+                    <div className="mb-4">
+                      <label htmlFor="participantName" className="block text-sm font-medium text-zinc-700 mb-1">
+                        請輸入合照中所有人名單 (請輸入完整全名) <span className="text-red-500">*</span>
+                      </label>
+                      <div className="mb-2 p-2 bg-amber-50 border border-amber-200 rounded-md">
+                        <p className="text-sm font-bold text-amber-700">⚠️ 若合照中不只一人，請務必「換行」輸入！</p>
                       </div>
+                      <textarea
+                        id="participantName"
+                        value={participantName}
+                        onChange={(e) => setParticipantName(e.target.value)}
+                        placeholder="例如：&#10;王小明&#10;陳大頭"
+                        rows={3}
+                        className="w-full px-4 py-2 border border-zinc-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all disabled:bg-zinc-100 disabled:text-zinc-500 resize-none"
+                        disabled={isUploading}
+                      />
+                      <p className="text-xs text-zinc-500 mt-1">重複輸入名稱僅會計算一次</p>
                     </div>
                     
                     {isUploading ? (
-                      <div className="mt-6 space-y-2">
+                      <div className="mt-2 space-y-2">
                         <div className="flex justify-between text-xs font-medium text-zinc-500">
                           <span>Uploading...</span>
                           <span>{uploadProgress}%</span>
@@ -601,7 +598,7 @@ export default function App() {
                         </div>
                       </div>
                     ) : (
-                      <div className="flex gap-3 mt-6">
+                      <div className="flex gap-3 mt-2">
                         <button
                           onClick={cancelUpload}
                           disabled={isUploading}
@@ -611,7 +608,7 @@ export default function App() {
                         </button>
                         <button
                           onClick={confirmUpload}
-                          disabled={isUploading}
+                          disabled={isUploading || !participantName.trim()}
                           className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-medium disabled:opacity-50 flex items-center justify-center gap-2"
                         >
                           <UploadCloud className="w-4 h-4" />
@@ -627,8 +624,7 @@ export default function App() {
                 <div 
                   className={cn(
                     "border-2 border-dashed rounded-xl p-8 transition-colors relative",
-                    isUploading ? "border-indigo-300 bg-indigo-50/50" : "border-zinc-300 hover:border-indigo-400 hover:bg-zinc-50",
-                    !participantName.trim() && "opacity-50 cursor-not-allowed hover:border-zinc-300 hover:bg-transparent"
+                    isUploading ? "border-indigo-300 bg-indigo-50/50" : "border-zinc-300 hover:border-indigo-400 hover:bg-zinc-50"
                   )}
                 >
                   <input
@@ -637,34 +633,19 @@ export default function App() {
                     onChange={handleFileUpload}
                     accept="image/jpeg, image/png"
                     className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
-                    disabled={isUploading || isDrawing || !participantName.trim()}
+                    disabled={isUploading || isDrawing}
                   />
                   <div className="flex flex-col items-center gap-3 pointer-events-none">
                     <div className="p-3 bg-white rounded-full shadow-sm border border-zinc-100">
-                      <UploadCloud className={cn("w-6 h-6", participantName.trim() ? "text-indigo-500" : "text-zinc-400")} />
+                      <UploadCloud className="w-6 h-6 text-indigo-500" />
                     </div>
                     <div>
                       <p className="text-sm font-medium text-zinc-700">
-                        {participantName.trim() ? "Click or drag photo to upload" : "請先輸入名稱再上傳照片"}
+                        Click or drag photo to upload
                       </p>
                     </div>
                   </div>
                 </div>
-
-                {isUploading && (
-                  <div className="mt-6 space-y-2">
-                    <div className="flex justify-between text-xs font-medium text-zinc-500">
-                      <span>Uploading...</span>
-                      <span>{uploadProgress}%</span>
-                    </div>
-                    <div className="h-2 bg-zinc-100 rounded-full overflow-hidden">
-                      <div 
-                        className="h-full bg-indigo-600 transition-all duration-300 ease-out rounded-full"
-                        style={{ width: `${uploadProgress}%` }}
-                      />
-                    </div>
-                  </div>
-                )}
               </>
             )}
           </div>
