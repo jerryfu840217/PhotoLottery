@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import axios from "axios";
 import confetti from "canvas-confetti";
-import { UploadCloud, Trash2, Gift, X, Image as ImageIcon, Edit2, Check, Plus, Users, Lock, Unlock, List, Download, LayoutGrid } from "lucide-react";
+import { UploadCloud, Trash2, Gift, X, Image as ImageIcon, Edit2, Check, Plus, Users, Lock, Unlock, List, Download, LayoutGrid, Play, Pause, ChevronLeft, ChevronRight, MonitorPlay } from "lucide-react";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 
@@ -70,12 +70,28 @@ export default function App() {
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [showParticipantsModal, setShowParticipantsModal] = useState(false);
   const [showAdminGallery, setShowAdminGallery] = useState(false);
+  const [showSlideshow, setShowSlideshow] = useState(false);
+  const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
+  const [isPlayingSlideshow, setIsPlayingSlideshow] = useState(true);
   const [adminPassword, setAdminPassword] = useState("");
   const [confirmState, setConfirmState] = useState<{ isOpen: boolean; message: string; action: () => void }>({ isOpen: false, message: "", action: () => {} });
   const [alertState, setAlertState] = useState<{ isOpen: boolean; message: string }>({ isOpen: false, message: "" });
   const [visibleCount, setVisibleCount] = useState(20);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [pendingPreviewUrl, setPendingPreviewUrl] = useState<string | null>(null);
+
+  const uniquePhotos = useMemo(() => {
+    const map = new Map<string, Photo & { allNames: string[] }>();
+    photos.forEach(photo => {
+      if (!map.has(photo.filename)) {
+        map.set(photo.filename, { ...photo, allNames: [] });
+      }
+      if (photo.participantName) {
+        map.get(photo.filename)!.allNames.push(photo.participantName);
+      }
+    });
+    return Array.from(map.values());
+  }, [photos]);
 
   const showAlert = (message: string) => setAlertState({ isOpen: true, message });
   const confirmAction = (message: string, action: () => void) => setConfirmState({ isOpen: true, message, action });
@@ -107,6 +123,18 @@ export default function App() {
     fetchPhotos();
     fetchTargetPhotos();
   }, []);
+
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (showSlideshow && isPlayingSlideshow && uniquePhotos.length > 0) {
+      interval = setInterval(() => {
+        setCurrentSlideIndex((prev) => (prev + 1) % uniquePhotos.length);
+      }, 3000); // 3 seconds per slide
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [showSlideshow, isPlayingSlideshow, uniquePhotos.length]);
 
   const fetchTargetPhotos = async () => {
     try {
@@ -445,6 +473,22 @@ export default function App() {
             </button>
             <div className="flex items-center gap-1 sm:gap-3 flex-shrink-0">
               <button
+                onClick={() => {
+                  if (uniquePhotos.length > 0) {
+                    setCurrentSlideIndex(0);
+                    setIsPlayingSlideshow(true);
+                    setShowSlideshow(true);
+                  } else {
+                    showAlert("目前還沒有照片可以輪播喔！");
+                  }
+                }}
+                className="px-2 sm:px-3 py-1.5 text-sm font-medium text-zinc-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors flex items-center gap-1.5"
+                title="輪播照片"
+              >
+                <MonitorPlay className="w-4 h-4" />
+                <span className="hidden sm:inline">輪播照片</span>
+              </button>
+              <button
                 onClick={() => setShowParticipantsModal(true)}
                 className="px-2 sm:px-3 py-1.5 text-sm font-medium text-zinc-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors flex items-center gap-1.5"
                 title="Participants"
@@ -576,7 +620,7 @@ export default function App() {
                         id="participantName"
                         value={participantName}
                         onChange={(e) => setParticipantName(e.target.value)}
-                        placeholder="例如：&#10;王小明&#10;陳大頭"
+                        placeholder="例如：&#10;傅宇祥&#10;黃薰樂"
                         rows={3}
                         className="w-full px-4 py-2 border border-zinc-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all disabled:bg-zinc-100 disabled:text-zinc-500 resize-none"
                         disabled={isUploading}
@@ -1041,6 +1085,71 @@ export default function App() {
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+      {/* Slideshow Modal */}
+      {showSlideshow && uniquePhotos.length > 0 && (
+        <div className="fixed inset-0 z-[80] flex flex-col bg-black/95 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className="flex items-center justify-between p-4 text-white/70 absolute top-0 left-0 right-0 z-10 bg-gradient-to-b from-black/50 to-transparent">
+            <div className="text-sm font-medium tracking-wider">
+              {currentSlideIndex + 1} / {uniquePhotos.length}
+            </div>
+            <button
+              onClick={() => setShowSlideshow(false)}
+              className="p-2 hover:text-white hover:bg-white/10 rounded-full transition-colors"
+              title="Close Slideshow"
+            >
+              <X className="w-6 h-6" />
+            </button>
+          </div>
+          
+          <div className="flex-1 relative flex items-center justify-center overflow-hidden p-4 sm:p-12">
+            <img
+              src={`/uploads/${uniquePhotos[currentSlideIndex].filename}`}
+              alt={uniquePhotos[currentSlideIndex].allNames.join(", ") || "Slideshow image"}
+              className="max-w-full max-h-full object-contain rounded-lg shadow-2xl animate-in fade-in zoom-in-95 duration-500"
+              key={currentSlideIndex}
+            />
+            
+            {/* Participant Name Overlay */}
+            {uniquePhotos[currentSlideIndex].allNames.length > 0 && (
+              <div className="absolute bottom-24 right-8 sm:right-12 bg-black/60 backdrop-blur-md text-white px-6 py-4 rounded-2xl text-xl font-medium shadow-xl animate-in slide-in-from-right-4 fade-in duration-500 whitespace-pre-wrap text-right">
+                {uniquePhotos[currentSlideIndex].allNames.join("\n")}
+              </div>
+            )}
+          </div>
+
+          <div className="absolute bottom-0 left-0 right-0 p-6 flex items-center justify-center gap-6 bg-gradient-to-t from-black/80 to-transparent">
+            <button
+              onClick={() => {
+                setIsPlayingSlideshow(false);
+                setCurrentSlideIndex((prev) => (prev === 0 ? uniquePhotos.length - 1 : prev - 1));
+              }}
+              className="p-3 text-white/70 hover:text-white hover:bg-white/10 rounded-full transition-colors"
+              title="Previous"
+            >
+              <ChevronLeft className="w-8 h-8" />
+            </button>
+            
+            <button
+              onClick={() => setIsPlayingSlideshow(!isPlayingSlideshow)}
+              className="p-4 bg-white text-black hover:bg-zinc-200 rounded-full transition-transform hover:scale-105 active:scale-95 shadow-xl"
+              title={isPlayingSlideshow ? "Pause" : "Play"}
+            >
+              {isPlayingSlideshow ? <Pause className="w-8 h-8" /> : <Play className="w-8 h-8 ml-1" />}
+            </button>
+            
+            <button
+              onClick={() => {
+                setIsPlayingSlideshow(false);
+                setCurrentSlideIndex((prev) => (prev + 1) % uniquePhotos.length);
+              }}
+              className="p-3 text-white/70 hover:text-white hover:bg-white/10 rounded-full transition-colors"
+              title="Next"
+            >
+              <ChevronRight className="w-8 h-8" />
+            </button>
           </div>
         </div>
       )}
