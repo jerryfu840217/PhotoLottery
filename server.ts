@@ -9,8 +9,8 @@ import sharp from "sharp";
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Setup SQLite database
-const dbDir = path.join(process.cwd(), "data");
+// Use DATA_DIR from environment or fallback to local ./data
+const dbDir = process.env.DATA_DIR || path.join(process.cwd(), "data");
 if (!fs.existsSync(dbDir)) {
   fs.mkdirSync(dbDir, { recursive: true });
 }
@@ -55,7 +55,7 @@ db.exec(`
 `);
 
 // Setup Multer for file uploads
-const uploadDir = path.join(process.cwd(), "data", "uploads");
+const uploadDir = path.join(dbDir, "uploads");
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
