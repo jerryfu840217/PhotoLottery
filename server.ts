@@ -371,6 +371,12 @@ async function startServer() {
     app.use(express.static(path.join(process.cwd(), "dist")));
     app.use('/prizes', express.static(path.join(process.cwd(), "public", "prizes")));
     app.use(express.static(path.join(process.cwd(), "public")));
+
+    // SPA Fallback
+    const distPath = path.join(process.cwd(), 'dist');
+    app.get('*', (req, res) => {
+      res.sendFile(path.join(distPath, 'index.html'));
+    });
   }
 
   app.listen(PORT, "0.0.0.0", () => {
