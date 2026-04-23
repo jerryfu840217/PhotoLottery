@@ -368,9 +368,11 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     // Serve static files in production
-    app.use(express.static(path.join(process.cwd(), "dist")));
-    app.use('/prizes', express.static(path.join(process.cwd(), "public", "prizes")));
+    // Prioritize public folder for images and assets that might not have been copied properly
     app.use(express.static(path.join(process.cwd(), "public")));
+    app.use('/prizes', express.static(path.join(process.cwd(), "public", "prizes")));
+    
+    app.use(express.static(path.join(process.cwd(), "dist")));
 
     // SPA Fallback
     const distPath = path.join(process.cwd(), 'dist');
