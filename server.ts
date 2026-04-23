@@ -7,7 +7,7 @@ import Database from "better-sqlite3";
 import sharp from "sharp";
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 // Setup SQLite database
 const dbDir = path.join(process.cwd(), "data");
