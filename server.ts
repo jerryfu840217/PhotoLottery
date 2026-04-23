@@ -369,6 +369,8 @@ async function startServer() {
   } else {
     // Serve static files in production
     app.use(express.static(path.join(process.cwd(), "dist")));
+    // Fallback: also ensure public folder is served if not bundled correctly
+    app.use(express.static(path.join(process.cwd(), "public")));
   }
 
   app.listen(PORT, "0.0.0.0", () => {
