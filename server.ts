@@ -4,6 +4,7 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import Database from "better-sqlite3";
+import sharp from "sharp";
 
 const app = express();
 const PORT = 3000;
@@ -34,6 +35,12 @@ try {
 
 try {
   db.prepare("ALTER TABLE photos ADD COLUMN uploaderId TEXT").run();
+} catch (e) {
+  // Column already exists, ignore
+}
+
+try {
+  db.prepare("ALTER TABLE photos ADD COLUMN is_drawn INTEGER DEFAULT 0").run();
 } catch (e) {
   // Column already exists, ignore
 }
@@ -152,14 +159,33 @@ app.get("/api/photos", (req, res) => {
   }
 });
 
-app.post("/api/photos", upload.single("photo"), (req, res) => {
+app.post("/api/photos", upload.single("photo"), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: "No file uploaded or invalid file type." });
   }
 
   try {
-    const namesString = req.body.participantName || '';
     const uploaderId = req.headers['x-uploader-id'] || '';
+    
+    // Check limit
+    if (uploaderId) {
+      const uploaderCountObj: any = db.prepare("SELECT COUNT(DISTINCT filename) as count FROM photos WHERE uploaderId = ?").get(uploaderId);
+      if (uploaderCountObj && uploaderCountObj.count >= 3) {
+         if (req.file) fs.unlinkSync(req.file.path);
+         return res.status(429).json({ error: "每位賓客最多上傳三次唷，請將機會留給其他朋友~" });
+      }
+    }
+
+    // Compress image
+    const tempPath = req.file.path + '_temp';
+    fs.renameSync(req.file.path, tempPath);
+    await sharp(tempPath)
+      .resize(1200, 1200, { fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality: 80 })
+      .toFile(req.file.path);
+    fs.unlinkSync(tempPath);
+
+    const namesString = req.body.participantName || '';
     const names = namesString.split(/[\n,]+/).map((n: string) => n.trim()).filter((n: string) => n);
     
     if (names.length === 0) {
@@ -185,21 +211,42 @@ app.post("/api/photos", upload.single("photo"), (req, res) => {
     insertMany(names);
     
     res.json(inserted);
-  } catch (err) {
+  } catch (err: any) {
     console.error(err);
+    if (req.file && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
+    // Delete temp file if exists from sharp error
+    if (req.file && fs.existsSync(req.file.path + '_temp')) {
+      fs.unlinkSync(req.file.path + '_temp');
+    }
     res.status(500).json({ error: "Failed to save photo record" });
   }
 });
 
 app.post("/api/draw", (req, res) => {
   try {
-    const winner = db.prepare("SELECT * FROM photos ORDER BY RANDOM() LIMIT 1").get();
+    const winner = db.prepare("SELECT * FROM photos WHERE is_drawn = 0 OR is_drawn IS NULL ORDER BY RANDOM() LIMIT 1").get();
     if (!winner) {
-      return res.status(404).json({ error: "No photos available for drawing." });
+      return res.status(404).json({ error: "目前已經沒有照片可以抽獎了！請確認是否已上傳照片或需重設抽獎紀錄。" });
     }
+    db.prepare("UPDATE photos SET is_drawn = 1 WHERE id = ?").run(winner.id);
     res.json(winner);
   } catch (err) {
     res.status(500).json({ error: "Failed to draw winner" });
+  }
+});
+
+app.post("/api/draw/reset", (req, res) => {
+  const isAdmin = req.headers['x-admin-password'] === '0000';
+  if (!isAdmin) {
+    return res.status(403).json({ error: "Unauthorized" });
+  }
+  try {
+    db.prepare("UPDATE photos SET is_drawn = 0").run();
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to reset draws" });
   }
 });
 

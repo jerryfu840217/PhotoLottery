@@ -1,9 +1,72 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import axios from "axios";
 import confetti from "canvas-confetti";
-import { UploadCloud, Trash2, Gift, X, Image as ImageIcon, Edit2, Check, Plus, Users, Lock, Unlock, List, Download, LayoutGrid, Play, Pause, ChevronLeft, ChevronRight, MonitorPlay } from "lucide-react";
+import { UploadCloud, Trash2, Gift, X, Image as ImageIcon, Edit2, Check, Plus, Users, Lock, Unlock, List, Download, LayoutGrid, Play, Pause, ChevronLeft, ChevronRight, MonitorPlay, Wind, Box, Zap, RotateCcw } from "lucide-react";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
+
+// Sound Effects Setup
+const playSpinSound = () => {
+  try {
+    const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContext) return;
+    const ctx = new AudioContext();
+    let time = ctx.currentTime;
+    for (let i = 0; i < 35; i++) {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.value = 600 + i * 5;
+      
+      gain.gain.setValueAtTime(0, time);
+      gain.gain.linearRampToValueAtTime(0.1, time + 0.01);
+      gain.gain.linearRampToValueAtTime(0, time + 0.05);
+      
+      osc.start(time);
+      osc.stop(time + 0.05);
+      // Interval speeds up over 3 seconds originally, we just loop for about 3 seconds
+      time += 0.12 - (i * 0.0025); 
+    }
+  } catch (e) {
+    console.error("Audio error", e);
+  }
+};
+
+const playWinSound = () => {
+  try {
+    const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContext) return;
+    const ctx = new AudioContext();
+    
+    const playNote = (freq: number, startTime: number, duration: number, type: OscillatorType = 'triangle') => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, ctx.currentTime + startTime);
+      
+      gain.gain.setValueAtTime(0, ctx.currentTime + startTime);
+      gain.gain.linearRampToValueAtTime(0.2, ctx.currentTime + startTime + 0.05);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + startTime + duration);
+      
+      osc.start(ctx.currentTime + startTime);
+      osc.stop(ctx.currentTime + startTime + duration);
+    };
+
+    // Tada chord
+    playNote(523.25, 0, 0.4); // C5
+    playNote(659.25, 0, 0.4); // E5
+    playNote(783.99, 0, 0.4); // G5
+    playNote(1046.50, 0.2, 0.8); // C6
+    playNote(783.99, 0.2, 0.8); // G5
+    playNote(1318.51, 0.2, 0.8); // E6
+  } catch (e) {
+    console.error("Audio error", e);
+  }
+};
 
 const compressImage = (file: File, maxWidth = 1080): Promise<File> => {
   return new Promise((resolve) => {
@@ -61,8 +124,12 @@ export default function App() {
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [isUploading, setIsUploading] = useState(false);
   const [isDrawing, setIsDrawing] = useState(false);
-  const [winner, setWinner] = useState<Photo | null>(null);
-  const [showWinnerModal, setShowWinnerModal] = useState(false);
+  const [showGrandDrawModal, setShowGrandDrawModal] = useState(false);
+  const [prizeWinners, setPrizeWinners] = useState<{ 1: Photo | null, 2: Photo | null, 3: Photo | null }>({ 1: null, 2: null, 3: null });
+  const [currentPrize, setCurrentPrize] = useState<1 | 2 | 3 | null>(null);
+  const [isDrawingDialog, setIsDrawingDialog] = useState(false);
+  const [isSpinning, setIsSpinning] = useState(false);
+  const [tempWinner, setTempWinner] = useState<Photo | null>(null);
   const [carouselIndex, setCarouselIndex] = useState(0);
   const [participantName, setParticipantName] = useState("");
   const [editingPhotoId, setEditingPhotoId] = useState<number | null>(null);
@@ -122,6 +189,13 @@ export default function App() {
   useEffect(() => {
     fetchPhotos();
     fetchTargetPhotos();
+    
+    // Auto-refresh mechanism (poll every 5 seconds)
+    const pollInterval = setInterval(() => {
+      fetchPhotos();
+    }, 5000);
+
+    return () => clearInterval(pollInterval);
   }, []);
 
   useEffect(() => {
@@ -281,53 +355,77 @@ export default function App() {
     }
   };
 
-  const drawWinner = async () => {
+  const drawGrandPrize = async (prizeId: 1 | 2 | 3) => {
     if (photos.length === 0) {
-      showAlert("No photos available for drawing.");
+      showAlert("目前沒有照片可以抽獎！");
       return;
     }
 
-    setIsDrawing(true);
-    setWinner(null);
-    setShowWinnerModal(true);
+    setIsDrawingDialog(true);
+    setIsSpinning(true);
+    setCurrentPrize(prizeId);
+    setTempWinner(null);
+    playSpinSound();
 
-    // Start carousel effect
     let currentIndex = 0;
     const interval = setInterval(() => {
       currentIndex = (currentIndex + 1) % photos.length;
       setCarouselIndex(currentIndex);
-    }, 100); // Fast cycle
+    }, 100);
 
     try {
-      const res = await axios.post("/api/draw");
+      const res = await axios.post("/api/draw", {}, { headers: getHeaders() });
       const drawnWinner = res.data;
 
-      // Simulate some suspense time (e.g., 3 seconds)
       setTimeout(() => {
         clearInterval(interval);
-        setWinner(drawnWinner);
+        playWinSound();
         
-        // Find winner index to stop carousel on it
         const winnerIdx = photos.findIndex(p => p.id === drawnWinner.id);
         if (winnerIdx !== -1) setCarouselIndex(winnerIdx);
 
-        triggerConfetti();
-        setIsDrawing(false);
+        triggerConfetti(prizeId === 1 ? 5 : prizeId === 2 ? 3 : 2);
+        
+        setTempWinner(drawnWinner);
+        setIsSpinning(false);
       }, 3000);
 
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to draw winner", error);
       clearInterval(interval);
-      setIsDrawing(false);
-      setShowWinnerModal(false);
-      alert("Failed to draw winner.");
+      setIsDrawingDialog(false);
+      setIsSpinning(false);
+      setCurrentPrize(null);
+      const msg = error.response?.data?.error || "Failed to draw winner.";
+      showAlert(msg);
     }
   };
 
-  const triggerConfetti = () => {
-    const duration = 3 * 1000;
+  const confirmWinner = () => {
+    if (currentPrize && tempWinner) {
+      setPrizeWinners(prev => ({ ...prev, [currentPrize]: tempWinner }));
+    }
+    setIsDrawingDialog(false);
+    setTempWinner(null);
+    setCurrentPrize(null);
+  };
+
+  const resetDraws = () => {
+    confirmAction("確定要重設並且清空所有中獎紀錄嗎？(照片將保留，但可以再次被抽出)", async () => {
+      try {
+        await axios.post("/api/draw/reset", {}, { headers: getHeaders() });
+        setPrizeWinners({ 1: null, 2: null, 3: null });
+        showAlert("抽獎紀錄已重設！");
+      } catch (error) {
+        showAlert("重設失敗！");
+      }
+    });
+  };
+
+  const triggerConfetti = (multiplier = 1) => {
+    const duration = 3 * 1000 * multiplier;
     const animationEnd = Date.now() + duration;
-    const defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 100 };
+    const defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 1000 };
 
     const randomInRange = (min: number, max: number) => Math.random() * (max - min) + min;
 
@@ -338,7 +436,7 @@ export default function App() {
         return clearInterval(interval);
       }
 
-      const particleCount = 50 * (timeLeft / duration);
+      const particleCount = 50 * (timeLeft / duration) * multiplier;
       confetti({
         ...defaults, particleCount,
         origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 }
@@ -461,7 +559,7 @@ export default function App() {
         <div className="max-w-5xl mx-auto px-4 py-3 flex flex-col gap-3">
           <div className="flex items-center justify-center gap-2">
             <Gift className="w-6 h-6 text-indigo-600 flex-shrink-0" />
-            <h1 className="text-xl font-semibold tracking-tight truncate">Jerry x Claire Photo Lottery</h1>
+            <h1 className="text-xl font-semibold tracking-tight truncate">Jerry x Claire Wedding</h1>
           </div>
           <div className="flex items-center justify-between">
             <button 
@@ -507,6 +605,15 @@ export default function App() {
                     <span className="hidden sm:inline">Admin Gallery</span>
                   </button>
                   <button
+                    onClick={resetDraws}
+                    disabled={photos.length === 0}
+                    className="px-2 sm:px-3 py-1.5 text-sm font-medium text-zinc-600 hover:text-amber-600 hover:bg-amber-50 rounded-md transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                    title="重設抽獎"
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                    <span className="hidden sm:inline">Reset Draws</span>
+                  </button>
+                  <button
                     onClick={clearPhotos}
                     disabled={photos.length === 0 || isDrawing || isUploading}
                     className="px-2 sm:px-3 py-1.5 text-sm font-medium text-zinc-600 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors disabled:opacity-50 flex items-center gap-1.5"
@@ -517,14 +624,16 @@ export default function App() {
                   </button>
                 </>
               )}
-              <button
-                onClick={drawWinner}
-                disabled={photos.length === 0 || isDrawing || isUploading}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-              >
-                <Gift className="w-4 h-4" />
-                抽出幸運兒!
-              </button>
+              {isAdmin && (
+                <button
+                  onClick={() => setShowGrandDrawModal(true)}
+                  disabled={photos.length === 0 || isDrawing || isUploading}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  <Gift className="w-4 h-4" />
+                  幸運抽獎
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -625,7 +734,7 @@ export default function App() {
                         className="w-full px-4 py-2 border border-zinc-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all disabled:bg-zinc-100 disabled:text-zinc-500 resize-none"
                         disabled={isUploading}
                       />
-                      <p className="text-xs text-zinc-500 mt-1">重複輸入名稱僅會計算一次</p>
+                      <p className="text-xs text-zinc-500 mt-1">請避免重複輸入名字</p>
                     </div>
                     
                     {isUploading ? (
@@ -1018,14 +1127,14 @@ export default function App() {
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-zinc-900/80 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in duration-200">
             <div className="p-6">
-              <h3 className="text-lg font-semibold mb-4">Notice</h3>
-              <p className="text-zinc-600 mb-6">{alertState.message}</p>
+              <h3 className="text-lg font-semibold mb-4 text-zinc-800">溫馨提示</h3>
+              <p className="text-zinc-600 mb-6 font-medium">{alertState.message}</p>
               <div className="flex justify-end">
                 <button
                   onClick={() => setAlertState({ ...alertState, isOpen: false })}
                   className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg transition-colors w-full"
                 >
-                  OK
+                  確認
                 </button>
               </div>
             </div>
@@ -1033,59 +1142,162 @@ export default function App() {
         </div>
       )}
 
-      {/* Winner Modal / Carousel */}
-      {showWinnerModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-900/80 backdrop-blur-sm">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden relative animate-in fade-in zoom-in duration-300">
-            {!isDrawing && (
-              <button 
-                onClick={() => setShowWinnerModal(false)}
-                className="absolute top-4 right-4 z-10 p-2 bg-black/10 hover:bg-black/20 text-white rounded-full backdrop-blur-md transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            )}
-            
-            <div className="p-8 text-center bg-zinc-900 text-white">
-              <h3 className="text-2xl font-bold tracking-tight mb-2">
-                {isDrawing ? "Drawing Winner..." : "We have a winner!"}
-              </h3>
-              <p className="text-zinc-400 text-sm">
-                {isDrawing ? "Good luck to everyone" : "Congratulations!"}
-              </p>
+      {/* Grand Draw Modal */}
+      {showGrandDrawModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-zinc-50 text-zinc-900 overflow-y-auto overflow-x-hidden animate-in fade-in duration-300">
+          <button 
+            onClick={() => setShowGrandDrawModal(false)}
+            className="absolute top-4 right-4 md:top-6 md:right-6 z-20 p-2 text-zinc-400 hover:text-zinc-600 hover:bg-zinc-200/50 rounded-full transition-colors"
+          >
+            <X className="w-8 h-8" />
+          </button>
+
+          <div className="w-full max-w-7xl mx-auto px-2 md:px-8 flex flex-col h-full min-h-screen pt-12 pb-4">
+            <div className="text-center mb-8 shrink-0 relative z-10">
+              <h2 className="text-3xl sm:text-4xl md:text-5xl font-extrabold tracking-tight text-zinc-900 mb-2 drop-shadow-sm">
+                Jerry x Claire photo lottery
+              </h2>
             </div>
 
-            <div className="p-8 flex flex-col items-center bg-white">
-              <div className="relative w-64 h-64 rounded-2xl overflow-hidden shadow-inner border-4 border-zinc-100 mb-6">
-                {photos.length > 0 && (
-                  <img
-                    src={`/uploads/${photos[carouselIndex].filename}`}
-                    alt="Participant"
+            <div className="flex-1 flex items-end justify-center gap-2 sm:gap-4 md:gap-8 pb-4 md:pb-8 relative z-10 w-full max-w-5xl mx-auto">
+              
+              {/* 2nd Prize */}
+              <div className="flex flex-col items-center w-1/3">
+                <div className="mb-2 md:mb-6 relative w-16 h-16 sm:w-24 sm:h-24 md:w-48 md:h-48 flex items-center justify-center">
+                  <img 
+                    src={prizeWinners[2] ? "/prizes/airfryer.png" : "/prizes/airfryer_grey.png"} 
+                    alt="Air Fryer placeholder" 
                     className={cn(
-                      "w-full h-full object-cover transition-all",
-                      isDrawing ? "scale-110 blur-[2px] opacity-80" : "scale-100 blur-0 opacity-100"
-                    )}
+                      "w-full h-full object-contain transition-all duration-1000", 
+                      prizeWinners[2] ? "drop-shadow-2xl scale-110" : ""
+                    )} 
                   />
-                )}
-                
-                {/* Overlay highlight when winner is selected */}
-                {!isDrawing && winner && (
-                  <div className="absolute inset-0 ring-4 ring-indigo-500 ring-inset rounded-2xl animate-pulse" />
-                )}
+                </div>
+                <div className="w-full bg-slate-100 border-t-8 border-slate-300 rounded-t-2xl h-32 sm:h-40 md:h-56 flex flex-col items-center justify-start pt-3 sm:pt-4 md:pt-6 shadow-xl relative mt-auto pb-4">
+                  <span className={cn("text-3xl sm:text-4xl md:text-5xl font-black text-black drop-shadow-sm transition-all duration-500", prizeWinners[2] ? "opacity-0 scale-75" : "opacity-100 scale-100")}>2nd</span>
+                  
+                  <div className="absolute inset-0 flex flex-col justify-end items-center w-full pb-3 sm:pb-5 md:pb-6">
+                    {prizeWinners[2] ? (
+                      <div className="flex flex-col items-center animate-in zoom-in-75 fade-in duration-500 absolute top-2 sm:top-2 md:top-4 w-full px-1">
+                        <span className="text-[10px] sm:text-xs md:text-xl font-bold text-black mb-1 z-20 truncate w-full text-center">Electrolux氣炸鍋</span>
+                        <img src={`/uploads/${prizeWinners[2].filename}`} className="w-14 h-14 sm:w-20 sm:h-20 md:w-32 md:h-32 rounded-full object-cover border-4 border-white shadow-lg z-20 bg-white mb-1.5 md:mb-2" />
+                        <span className="text-[10px] sm:text-sm md:text-xl font-black text-black z-20 bg-white/80 px-2 sm:px-3 py-0.5 md:py-1 rounded-full backdrop-blur-md max-w-[95%] truncate shadow-sm border border-slate-200">{prizeWinners[2].participantName || prizeWinners[2].originalName}</span>
+                      </div>
+                    ) : (
+                      <button 
+                        onClick={() => drawGrandPrize(2)}
+                        className="px-3 py-1.5 sm:px-6 sm:py-2 md:px-8 md:py-3 bg-indigo-500 hover:bg-indigo-400 text-white font-bold rounded-full text-[10px] sm:text-sm md:text-lg shadow-md transition-all hover:scale-105 z-10"
+                      >
+                        抽二獎
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
 
-              {!isDrawing && winner && (
-                <div className="text-center animate-in slide-in-from-bottom-4 fade-in duration-500">
-                  <p className="text-lg font-semibold text-zinc-900 truncate max-w-[250px]">
-                    {winner.participantName || winner.originalName}
-                  </p>
-                  <p className="text-sm text-zinc-500 mt-1">
-                    Ticket #{winner.id.toString().padStart(4, '0')}
-                  </p>
+              {/* 1st Prize */}
+              <div className="flex flex-col items-center w-[35%] z-10">
+                <div className="mb-2 md:mb-6 relative w-20 h-20 sm:w-32 sm:h-32 md:w-64 md:h-64 flex items-center justify-center">
+                  <img 
+                    src={prizeWinners[1] ? "/prizes/dyson.png" : "/prizes/dyson_grey.png"} 
+                    alt="Dyson placeholder" 
+                    className={cn(
+                      "w-full h-full object-contain transition-all duration-1000", 
+                      prizeWinners[1] ? "drop-shadow-[0_0_30px_rgba(251,191,36,0.5)] scale-110" : ""
+                    )} 
+                  />
                 </div>
-              )}
+                <div className="w-full bg-amber-50 border-t-8 border-amber-300 rounded-t-2xl h-40 sm:h-48 md:h-64 flex flex-col items-center justify-start pt-3 sm:pt-4 md:pt-6 shadow-2xl relative mt-auto pb-6">
+                  <span className={cn("text-5xl sm:text-6xl md:text-7xl font-black text-black drop-shadow-sm transition-all duration-500", prizeWinners[1] ? "opacity-0 scale-75" : "opacity-100 scale-100")}>1st</span>
+                  
+                  <div className="absolute inset-0 flex flex-col justify-end items-center w-full pb-4 sm:pb-6 md:pb-8">
+                    {prizeWinners[1] ? (
+                      <div className="flex flex-col items-center animate-in zoom-in-75 fade-in duration-500 absolute top-2 sm:top-2 md:top-4 w-full px-2">
+                        <span className="text-[10px] sm:text-sm md:text-2xl font-bold text-black mb-1 md:mb-2 z-20 truncate w-full text-center drop-shadow-sm">Dyson吹風機</span>
+                        <img src={`/uploads/${prizeWinners[1].filename}`} className="w-16 h-16 sm:w-24 sm:h-24 md:w-36 md:h-36 rounded-full object-cover border-4 border-white shadow-xl z-20 bg-white mb-2 md:mb-3" />
+                        <span className="text-xs sm:text-base md:text-2xl font-black text-black z-20 bg-white/80 px-2 sm:px-4 py-1 md:py-1.5 rounded-full backdrop-blur-md max-w-[95%] truncate shadow-sm border border-amber-200">{prizeWinners[1].participantName || prizeWinners[1].originalName}</span>
+                      </div>
+                    ) : (
+                      <button 
+                        onClick={() => drawGrandPrize(1)}
+                        className="px-4 py-2 sm:px-8 sm:py-3 md:px-12 md:py-4 bg-amber-400 hover:bg-amber-300 text-amber-950 font-black rounded-full text-xs sm:text-base md:text-xl shadow-[0_0_20px_rgba(251,191,36,0.3)] transition-all hover:scale-105 z-10"
+                      >
+                        抽一獎
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* 3rd Prize */}
+              <div className="flex flex-col items-center w-1/3">
+                <div className="mb-2 md:mb-6 relative w-16 h-16 sm:w-24 sm:h-24 md:w-48 md:h-48 flex items-center justify-center">
+                  <img 
+                    src={prizeWinners[3] ? "/prizes/toothbrush.png" : "/prizes/toothbrush_grey.png"} 
+                    alt="Toothbrush placeholder" 
+                    className={cn(
+                      "w-full h-full object-contain transition-all duration-1000", 
+                      prizeWinners[3] ? "drop-shadow-2xl scale-110" : ""
+                    )} 
+                  />
+                </div>
+                <div className="w-full bg-orange-50/50 border-t-8 border-orange-200 rounded-t-2xl h-28 sm:h-36 md:h-48 flex flex-col items-center justify-start pt-3 sm:pt-4 md:pt-6 shadow-xl relative mt-auto pb-4">
+                  <span className={cn("text-2xl sm:text-3xl md:text-4xl font-black text-black drop-shadow-sm transition-all duration-500", prizeWinners[3] ? "opacity-0 scale-75" : "opacity-100 scale-100")}>3rd</span>
+                  
+                  <div className="absolute inset-0 flex flex-col justify-end items-center w-full pb-2 sm:pb-4 md:pb-5">
+                    {prizeWinners[3] ? (
+                      <div className="flex flex-col items-center animate-in zoom-in-75 fade-in duration-500 absolute top-2 sm:top-2 md:top-4 w-full px-1">
+                        <span className="text-[9px] sm:text-xs md:text-lg font-bold text-black mb-0.5 md:mb-1 z-20 truncate w-full text-center">Philips電動牙刷</span>
+                        <img src={`/uploads/${prizeWinners[3].filename}`} className="w-12 h-12 sm:w-16 sm:h-16 md:w-28 md:h-28 rounded-full object-cover border-4 border-white shadow-md z-20 bg-white mb-1.5 md:mb-2" />
+                        <span className="text-[9px] sm:text-xs md:text-lg font-black text-black z-20 bg-white/80 px-1.5 sm:px-2.5 py-0.5 md:py-1 rounded-full backdrop-blur-md max-w-[95%] truncate shadow-sm border border-orange-200">{prizeWinners[3].participantName || prizeWinners[3].originalName}</span>
+                      </div>
+                    ) : (
+                      <button 
+                        onClick={() => drawGrandPrize(3)}
+                        className="px-2 py-1.5 sm:px-5 sm:py-2 md:px-6 md:py-2.5 bg-orange-400 hover:bg-orange-300 text-white font-bold rounded-full text-[10px] sm:text-sm md:text-base shadow-md transition-all hover:scale-105 z-10"
+                      >
+                        抽三獎
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
             </div>
           </div>
+
+          {/* Popup for spinning wheel */}
+          {isDrawingDialog && (
+            <div className="fixed inset-0 z-[110] flex flex-col items-center justify-center bg-zinc-900/60 backdrop-blur-md animate-in fade-in duration-200 p-4">
+              <div className="w-full max-w-2xl bg-white rounded-3xl p-6 md:p-10 flex flex-col items-center shadow-2xl border border-zinc-200">
+                <h3 className="text-2xl md:text-3xl font-bold text-zinc-800 mb-6 md:mb-8 text-center animate-pulse">
+                  {isSpinning ? `正在抽出第 ${currentPrize} 獎...` : `第 ${currentPrize} 獎得主！`}
+                </h3>
+                
+                <div className={cn("relative w-48 h-48 md:w-80 md:h-80 rounded-full overflow-hidden border-8 shadow-2xl mb-6 md:mb-8 transition-all duration-500", !isSpinning ? "border-amber-400 scale-105" : "border-indigo-100")}>
+                  {photos.length > 0 && (
+                    <img
+                      src={`/uploads/${!isSpinning && tempWinner ? tempWinner.filename : photos[carouselIndex].filename}`}
+                      alt="Current"
+                      className={cn("w-full h-full object-cover transition-all", isSpinning ? "scale-110 blur-[1px] opacity-80" : "scale-100 blur-0 opacity-100")}
+                    />
+                  )}
+                </div>
+
+                {!isSpinning && tempWinner && (
+                  <div className="text-center animate-in slide-in-from-bottom-8 fade-in duration-500 flex flex-col items-center w-full">
+                    <span className="text-3xl md:text-4xl font-black text-zinc-800 mb-6 md:mb-8 block drop-shadow-sm truncate max-w-full px-4">{tempWinner.participantName || tempWinner.originalName}</span>
+                    <button
+                      onClick={confirmWinner}
+                      className="px-8 py-3 md:px-12 md:py-4 bg-gradient-to-r from-amber-400 to-orange-400 hover:from-amber-400 hover:to-orange-400 text-white font-bold rounded-full text-lg md:text-xl shadow-xl transition-all hover:scale-105 flex items-center gap-2"
+                    >
+                      確定得獎
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
       {/* Slideshow Modal */}
