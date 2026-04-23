@@ -7,7 +7,7 @@ import Database from "better-sqlite3";
 import sharp from "sharp";
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = parseInt(process.env.PORT || '3000', 10);
 
 // Use DATA_DIR from environment or fallback to local ./data
 const dbDir = process.env.DATA_DIR || path.join(process.cwd(), "data");
@@ -369,7 +369,7 @@ async function startServer() {
   } else {
     // Serve static files in production
     app.use(express.static(path.join(process.cwd(), "dist")));
-    // Fallback: also ensure public folder is served if not bundled correctly
+    app.use('/prizes', express.static(path.join(process.cwd(), "public", "prizes")));
     app.use(express.static(path.join(process.cwd(), "public")));
   }
 
