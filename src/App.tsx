@@ -191,12 +191,18 @@ export default function App() {
     fetchTargetPhotos();
     
     // Auto-refresh mechanism (poll every 5 seconds)
-    const pollInterval = setInterval(() => {
-      fetchPhotos();
-    }, 5000);
+    // ONLY FOR ADMINS to avoid massive concurrent requests from 200 users
+    let pollInterval: NodeJS.Timeout;
+    if (isAdmin) {
+      pollInterval = setInterval(() => {
+        fetchPhotos();
+      }, 5000);
+    }
 
-    return () => clearInterval(pollInterval);
-  }, []);
+    return () => {
+      if (pollInterval) clearInterval(pollInterval);
+    };
+  }, [isAdmin]);
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -212,7 +218,7 @@ export default function App() {
 
   const fetchTargetPhotos = async () => {
     try {
-      const res = await axios.get("/api/target-photos");
+      const res = await axios.get("/api/target-photos", { headers: getHeaders() });
       setTargetPhotos(Array.isArray(res.data) ? res.data : []);
     } catch (error) {
       console.error("Failed to fetch target photos", error);
@@ -273,7 +279,7 @@ export default function App() {
 
   const fetchPhotos = async () => {
     try {
-      const res = await axios.get("/api/photos");
+      const res = await axios.get("/api/photos", { headers: getHeaders() });
       setPhotos(Array.isArray(res.data) ? res.data : []);
     } catch (error) {
       console.error("Failed to fetch photos", error);
@@ -570,22 +576,6 @@ export default function App() {
               {isAdmin ? <Unlock className="w-5 h-5" /> : <Lock className="w-5 h-5" />}
             </button>
             <div className="flex items-center gap-1 sm:gap-3 flex-shrink-0">
-              <button
-                onClick={() => {
-                  if (uniquePhotos.length > 0) {
-                    setCurrentSlideIndex(0);
-                    setIsPlayingSlideshow(true);
-                    setShowSlideshow(true);
-                  } else {
-                    showAlert("目前還沒有照片可以輪播喔！");
-                  }
-                }}
-                className="px-2 sm:px-3 py-1.5 text-sm font-medium text-zinc-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors flex items-center gap-1.5"
-                title="輪播照片"
-              >
-                <MonitorPlay className="w-4 h-4" />
-                <span className="hidden sm:inline">輪播照片</span>
-              </button>
               <button
                 onClick={() => setShowParticipantsModal(true)}
                 className="px-2 sm:px-3 py-1.5 text-sm font-medium text-zinc-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors flex items-center gap-1.5"

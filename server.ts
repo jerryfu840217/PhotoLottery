@@ -14,8 +14,10 @@ const dbDir = process.env.DATA_DIR || path.join(process.cwd(), "data");
 if (!fs.existsSync(dbDir)) {
   fs.mkdirSync(dbDir, { recursive: true });
 }
-const db = new Database(path.join(dbDir, "lottery.db"));
+const db = new Database(path.join(dbDir, "lottery.db"), { timeout: 10000 });
 db.pragma('journal_mode = WAL');
+db.pragma('synchronous = NORMAL');
+db.pragma('cache_size = -32000'); // 32MB cache
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS photos (
@@ -87,7 +89,7 @@ const upload = multer({
 app.use(express.json());
 
 // Serve uploaded files
-app.use("/uploads", express.static(uploadDir));
+app.use("/uploads", express.static(uploadDir, { maxAge: '1d', immutable: true }));
 
 // API Routes
 app.get("/api/target-photos", (req, res) => {
@@ -150,10 +152,31 @@ app.delete("/api/target-photos/:id", (req, res) => {
   }
 });
 
+let photosCache: string | null = null;
+let photosCacheTime = 0;
+
 app.get("/api/photos", (req, res) => {
   try {
-    const photos = db.prepare("SELECT * FROM photos ORDER BY uploadTime DESC").all();
-    res.json(photos);
+    const isAdmin = req.headers['x-admin-password'] === '0000';
+    const uploaderId = req.headers['x-uploader-id'];
+
+    if (isAdmin) {
+      // 只有管理員才快取並回傳「所有人的」照片，以避免普通使用者端收到巨大 payload
+      if (photosCache && Date.now() - photosCacheTime < 2000) {
+        res.setHeader('Content-Type', 'application/json');
+        return res.send(photosCache);
+      }
+      const photos = db.prepare("SELECT * FROM photos ORDER BY uploadTime DESC").all();
+      photosCache = JSON.stringify(photos);
+      photosCacheTime = Date.now();
+      res.setHeader('Content-Type', 'application/json');
+      return res.send(photosCache);
+    } else {
+      // 若為一般使用者（不論首輪載入或自行刷新），只回傳「自己」上傳的記錄
+      if (!uploaderId) return res.json([]);
+      const userPhotos = db.prepare("SELECT * FROM photos WHERE uploaderId = ? ORDER BY uploadTime DESC").all(uploaderId);
+      return res.json(userPhotos);
+    }
   } catch (err) {
     res.status(500).json({ error: "Failed to fetch photos" });
   }
@@ -210,6 +233,9 @@ app.post("/api/photos", upload.single("photo"), async (req, res) => {
     
     insertMany(names);
     
+    // Invalidate cache
+    photosCache = null;
+    
     res.json(inserted);
   } catch (err: any) {
     console.error(err);
@@ -231,6 +257,8 @@ app.post("/api/draw", (req, res) => {
       return res.status(404).json({ error: "目前已經沒有照片可以抽獎了！請確認是否已上傳照片或需重設抽獎紀錄。" });
     }
     db.prepare("UPDATE photos SET is_drawn = 1 WHERE id = ?").run(winner.id);
+    // Invalidate cache
+    photosCache = null;
     res.json(winner);
   } catch (err) {
     res.status(500).json({ error: "Failed to draw winner" });
@@ -244,6 +272,8 @@ app.post("/api/draw/reset", (req, res) => {
   }
   try {
     db.prepare("UPDATE photos SET is_drawn = 0").run();
+    // Invalidate cache
+    photosCache = null;
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: "Failed to reset draws" });
@@ -274,6 +304,9 @@ app.delete("/api/photos", (req, res) => {
       }
     }
     
+    // Invalidate cache
+    photosCache = null;
+
     res.json({ success: true });
   } catch (err) {
     console.error("Failed to clear photos", err);
@@ -307,6 +340,10 @@ app.delete("/api/photos/:id", (req, res) => {
         }
       }
       db.prepare("DELETE FROM photos WHERE id = ?").run(id);
+      
+      // Invalidate cache
+      photosCache = null;
+
       res.json({ success: true });
     } else {
       res.status(404).json({ error: "Photo not found" });
@@ -336,6 +373,8 @@ app.put("/api/photos/:id", (req, res) => {
     const info = db.prepare("UPDATE photos SET participantName = ? WHERE id = ?").run(participantName, id);
     
     if (info.changes > 0) {
+      // Invalidate cache
+      photosCache = null;
       res.json({ success: true });
     } else {
       res.status(404).json({ error: "Photo not found" });
