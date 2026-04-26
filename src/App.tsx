@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import axios from "axios";
 import confetti from "canvas-confetti";
+import imageCompression from 'browser-image-compression';
 import { UploadCloud, Trash2, Gift, X, Image as ImageIcon, Edit2, Check, Plus, Users, Lock, Unlock, List, Download, LayoutGrid, Play, Pause, ChevronLeft, ChevronRight, MonitorPlay, Wind, Box, Zap, RotateCcw } from "lucide-react";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
@@ -68,40 +69,21 @@ const playWinSound = () => {
   }
 };
 
-const compressImage = (file: File, maxWidth = 1080): Promise<File> => {
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = (event) => {
-      const img = new Image();
-      img.src = event.target?.result as string;
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        let width = img.width;
-        let height = img.height;
-
-        if (width > maxWidth) {
-          height = Math.round((height * maxWidth) / width);
-          width = maxWidth;
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx?.drawImage(img, 0, 0, width, height);
-
-        canvas.toBlob((blob) => {
-          if (blob) {
-            resolve(new File([blob], file.name.replace(/\.[^/.]+$/, "") + ".jpg", { type: 'image/jpeg' }));
-          } else {
-            resolve(file);
-          }
-        }, 'image/jpeg', 0.8);
-      };
-      img.onerror = () => resolve(file);
-    };
-    reader.onerror = () => resolve(file);
-  });
+const compressImage = async (file: File): Promise<File> => {
+  const options = {
+    maxSizeMB: 1, // Compress to under 1MB
+    maxWidthOrHeight: 1280, // Max width or height
+    useWebWorker: true,
+    fileType: 'image/jpeg' as string, // Force JPEG
+  };
+  try {
+    const compressedFile = await imageCompression(file, options);
+    // Convert Blob to File object
+    return new File([compressedFile], file.name.replace(/\.[^/.]+$/, "") + ".jpg", { type: 'image/jpeg' });
+  } catch (error) {
+    console.error("Compression error:", error);
+    return file; // Fallback to original if compression fails
+  }
 };
 
 function cn(...inputs: ClassValue[]) {

@@ -88,6 +88,25 @@ const upload = multer({
 
 app.use(express.json());
 
+import rateLimit from 'express-rate-limit';
+
+// 套用全域限流 (防止惡意攻擊與短時間炸服)
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 300, // 每 15 分鐘最多 300 個請求
+  message: { error: "請求次數過多，請稍後再試。" },
+  standardHeaders: true, 
+  legacyHeaders: false,
+});
+app.use(limiter);
+
+// 針對上傳介面可以套用更嚴格的限流
+const uploadLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 30, // 每分鐘最多上傳 30 張 (正常使用不太可能超過)
+  message: { error: "上傳速度過快，請稍後再試。" },
+});
+
 // Serve uploaded files
 app.use("/uploads", express.static(uploadDir, { maxAge: '1d', immutable: true }));
 
@@ -101,7 +120,7 @@ app.get("/api/target-photos", (req, res) => {
   }
 });
 
-app.post("/api/target-photos", upload.single("photo"), (req, res) => {
+app.post("/api/target-photos", uploadLimiter, upload.single("photo"), (req, res) => {
   const isAdmin = req.headers['x-admin-password'] === '0000';
   if (!isAdmin) {
     return res.status(403).json({ error: "Unauthorized" });
@@ -182,7 +201,7 @@ app.get("/api/photos", (req, res) => {
   }
 });
 
-app.post("/api/photos", upload.single("photo"), async (req, res) => {
+app.post("/api/photos", uploadLimiter, upload.single("photo"), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: "No file uploaded or invalid file type." });
   }
