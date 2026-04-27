@@ -93,7 +93,7 @@ import rateLimit from 'express-rate-limit';
 // 套用全域限流 (防止惡意攻擊與短時間炸服)
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 300, // 每 15 分鐘最多 300 個請求
+  max: 1000, // 放寬為：每 15 分鐘最多 1000 個請求 (考慮同WiFi情境)
   message: { error: "請求次數過多，請稍後再試。" },
   standardHeaders: true, 
   legacyHeaders: false,
@@ -103,7 +103,7 @@ app.use(limiter);
 // 針對上傳介面可以套用更嚴格的限流
 const uploadLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: 30, // 每分鐘最多上傳 30 張 (正常使用不太可能超過)
+  max: 150, // 放寬為：每分鐘相同 IP 最多上傳 150 張 (防止同 WiFi 的賓客被擋)
   message: { error: "上傳速度過快，請稍後再試。" },
 });
 

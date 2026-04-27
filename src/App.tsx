@@ -577,6 +577,15 @@ export default function App() {
                     <span className="hidden sm:inline">Admin Gallery</span>
                   </button>
                   <button
+                    onClick={() => setShowSlideshow(true)}
+                    disabled={photos.length === 0}
+                    className="px-2 sm:px-3 py-1.5 text-sm font-medium text-zinc-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                    title="Slideshow"
+                  >
+                    <MonitorPlay className="w-4 h-4" />
+                    <span className="hidden sm:inline">Slideshow</span>
+                  </button>
+                  <button
                     onClick={resetDraws}
                     disabled={photos.length === 0}
                     className="px-2 sm:px-3 py-1.5 text-sm font-medium text-zinc-600 hover:text-amber-600 hover:bg-amber-50 rounded-md transition-colors disabled:opacity-50 flex items-center gap-1.5"
