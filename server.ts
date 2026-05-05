@@ -7,6 +7,7 @@ import Database from "better-sqlite3";
 import sharp from "sharp";
 
 const app = express();
+app.set('trust proxy', 1);
 const PORT = parseInt(process.env.PORT || '3000', 10);
 
 // Use DATA_DIR from environment or fallback to local ./data
@@ -97,6 +98,7 @@ const limiter = rateLimit({
   message: { error: "請求次數過多，請稍後再試。" },
   standardHeaders: true, 
   legacyHeaders: false,
+  validate: { trustProxy: false, xForwardedForHeader: false, default: true },
 });
 app.use(limiter);
 
@@ -105,6 +107,9 @@ const uploadLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
   max: 150, // 放寬為：每分鐘相同 IP 最多上傳 150 張 (防止同 WiFi 的賓客被擋)
   message: { error: "上傳速度過快，請稍後再試。" },
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: { trustProxy: false, xForwardedForHeader: false, default: true },
 });
 
 // Serve uploaded files

@@ -559,16 +559,16 @@ export default function App() {
               {isAdmin ? <Unlock className="w-5 h-5" /> : <Lock className="w-5 h-5" />}
             </button>
             <div className="flex items-center gap-1 sm:gap-3 flex-shrink-0">
-              <button
-                onClick={() => setShowParticipantsModal(true)}
-                className="px-2 sm:px-3 py-1.5 text-sm font-medium text-zinc-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors flex items-center gap-1.5"
-                title="Participants"
-              >
-                <List className="w-4 h-4" />
-                <span className="hidden sm:inline">Participants</span>
-              </button>
               {isAdmin && (
                 <>
+                  <button
+                    onClick={() => setShowParticipantsModal(true)}
+                    className="px-2 sm:px-3 py-1.5 text-sm font-medium text-zinc-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors flex items-center gap-1.5"
+                    title="Participants"
+                  >
+                    <List className="w-4 h-4" />
+                    <span className="hidden sm:inline">Participants</span>
+                  </button>
                   <button
                     onClick={() => setShowAdminGallery(true)}
                     className="px-2 sm:px-3 py-1.5 text-sm font-medium text-zinc-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors flex items-center gap-1.5"
