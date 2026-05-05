@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from "react";
 import axios from "axios";
 import confetti from "canvas-confetti";
 import imageCompression from 'browser-image-compression';
-import { UploadCloud, Trash2, Gift, X, Image as ImageIcon, Edit2, Check, Plus, Users, Lock, Unlock, List, Download, LayoutGrid, Play, Pause, ChevronLeft, ChevronRight, MonitorPlay, Wind, Box, Zap, RotateCcw } from "lucide-react";
+import { UploadCloud, Trash2, Gift, X, Image as ImageIcon, Edit2, Check, Plus, Users, Lock, Unlock, List, Download, LayoutGrid, Play, Pause, ChevronLeft, ChevronRight, MonitorPlay, Wind, Box, Zap, RotateCcw, Camera } from "lucide-react";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 
@@ -332,6 +332,7 @@ export default function App() {
         },
       });
       await fetchPhotos();
+      showAlert("上傳成功!\n您的照片將會在螢幕中展出!");
     } catch (error: any) {
       console.error("Upload failed", error);
       showAlert(error.response?.data?.error || "Upload failed");
@@ -621,71 +622,58 @@ export default function App() {
       </header>
 
       <main className="max-w-5xl mx-auto px-4 py-8 space-y-8">
-        {/* Target Photos Section */}
-        <section className="bg-white rounded-2xl border border-zinc-200 p-6 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-medium flex items-center gap-2">
-              <Users className="w-5 h-5 text-indigo-500" />
-              尋找目標
-            </h2>
-            {isAdmin && (
-              <div>
-                <input
-                  type="file"
-                  ref={targetFileInputRef}
-                  onChange={handleTargetUpload}
-                  accept="image/jpeg, image/png"
-                  className="hidden"
-                  disabled={isUploadingTarget}
-                />
-                <button
-                  onClick={() => targetFileInputRef.current?.click()}
-                  disabled={isUploadingTarget}
-                  className="px-3 py-1.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 text-sm font-medium rounded-md transition-colors disabled:opacity-50 flex items-center gap-1.5"
-                >
-                  <Plus className="w-4 h-4" />
-                  {isUploadingTarget ? "Uploading..." : "Add Target"}
-                </button>
-              </div>
-            )}
+        {/* Map Section */}
+        <section className="bg-white rounded-2xl border border-zinc-200 p-6 shadow-sm flex flex-col md:flex-row items-center justify-between gap-6">
+          <div className="flex flex-col gap-5 w-full md:w-1/2">
+            <div className="flex flex-col gap-1">
+              <h2 className="text-lg font-medium flex items-center gap-2 text-balance">
+                <Users className="w-5 h-5 text-indigo-500 shrink-0" />
+                在迎賓區中的目標區域(3選1)
+              </h2>
+              <p className="text-sm text-zinc-500 pl-7">照片展覽區 / 植栽布幔區 / 小人人攤位</p>
+            </div>
+            
+            <div className="flex flex-col gap-1">
+              <h2 className="text-lg font-medium flex items-center gap-2 text-balance">
+                <Camera className="w-5 h-5 text-indigo-500 shrink-0" />
+                與尬意的角落合照
+              </h2>
+              <p className="text-sm text-zinc-500 pl-7">記得人要入鏡!</p>
+            </div>
           </div>
           
-          {targetPhotos.length === 0 ? (
-            <div className="text-center py-8 bg-zinc-50 rounded-xl border border-zinc-200 border-dashed">
-              <p className="text-zinc-500 text-sm">尚未設定尋找目標{isAdmin ? "，請點擊右上角新增" : ""}。</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 gap-4">
-              {targetPhotos.map((photo) => (
-                <div key={photo.id} className="group relative w-full aspect-square rounded-xl overflow-hidden bg-zinc-100 border border-zinc-200 shadow-sm">
-                  <img
-                    src={`/uploads/${photo.filename}`}
-                    alt={photo.originalName}
-                    className="w-full h-full object-cover"
-                    loading="lazy"
-                  />
-                  {isAdmin && (
-                    <button
-                      onClick={() => deleteTargetPhoto(photo.id)}
-                      className="absolute top-2 right-2 p-1.5 bg-white/90 hover:bg-red-50 text-red-600 rounded-md shadow-sm backdrop-blur-sm opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all"
-                      title="Delete Target"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
+          <div className="w-full md:w-1/2 flex flex-col items-center">
+            <img 
+              src="/map.jpg" 
+              alt="活動地圖 (請在此區塊上傳 map.jpg)" 
+              className="w-full h-auto object-contain rounded-xl border border-zinc-100"
+              onError={(e) => {
+                const target = e.target as HTMLImageElement;
+                target.style.display = 'none';
+                if (target.parentElement) {
+                  target.parentElement.innerHTML = `
+                    <div class="flex flex-col items-center justify-center w-full h-48 bg-zinc-50 border border-zinc-200 rounded-xl border-dashed">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-zinc-300 mb-2"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+                      <p class="text-zinc-500 text-sm font-medium">請將地圖檔上傳至 public 目錄並命名為 map.jpg</p>
+                    </div>`;
+                }
+              }}
+            />
+          </div>
         </section>
 
         {/* Upload Section */}
         <section className="bg-white rounded-2xl border border-zinc-200 p-8 shadow-sm">
-          <div className="max-w-xl mx-auto text-center">
-            <h2 className="text-lg font-medium mb-2">找到他們 → 跟他們合照 → 上傳照片 → 輸入合照中所有人的名字</h2>
-            <p className="text-sm text-zinc-500 mb-6">
-                JPG or PNG up to 5MB. 
-            </p>
+          <div className="max-w-xl mx-auto">
+            <div className="flex flex-col gap-1 items-start text-left mb-6">
+              <h2 className="text-lg font-medium flex items-center gap-2">
+                <UploadCloud className="w-5 h-5 text-indigo-500 shrink-0" />
+                上傳照片
+              </h2>
+              <p className="text-sm text-zinc-500 pl-7">
+                  輸入合照中所有人的名字
+              </p>
+            </div>
             
             {pendingFile && pendingPreviewUrl ? (
               <div className="border border-zinc-200 rounded-xl p-6 bg-zinc-50 text-left">
@@ -775,7 +763,7 @@ export default function App() {
                     </div>
                     <div>
                       <p className="text-sm font-medium text-zinc-700">
-                        Click or drag photo to upload
+                        Click photo to upload
                       </p>
                     </div>
                   </div>
@@ -786,6 +774,7 @@ export default function App() {
         </section>
 
         {/* Photo Grid */}
+        {isAdmin && (
         <section>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-medium flex items-center gap-2">
@@ -886,6 +875,7 @@ export default function App() {
           </div>
           )}
         </section>
+        )}
       </main>
 
       {/* Participants Modal */}
@@ -1109,7 +1099,7 @@ export default function App() {
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in duration-200">
             <div className="p-6">
               <h3 className="text-lg font-semibold mb-4 text-zinc-800">溫馨提示</h3>
-              <p className="text-zinc-600 mb-6 font-medium">{alertState.message}</p>
+              <p className="text-zinc-600 mb-6 font-medium whitespace-pre-wrap">{alertState.message}</p>
               <div className="flex justify-end">
                 <button
                   onClick={() => setAlertState({ ...alertState, isOpen: false })}
