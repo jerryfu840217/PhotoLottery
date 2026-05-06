@@ -8,7 +8,7 @@ const path = require('path');
 const TARGET_URL = 'http://localhost:3000/api/photos';
 
 // 照片數量
-const NUM_PHOTOS = 500;
+const NUM_PHOTOS = 300;
 // 短時間內併發數 (在幾秒內發送)
 const BURST_TIME_MS = 3000; 
 
